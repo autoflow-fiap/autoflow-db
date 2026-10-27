@@ -6,6 +6,15 @@ from review_rds_plan import review_plan_file, validate_plan
 
 
 class ReviewRdsPlanTests(unittest.TestCase):
+    def test_rds_discovers_cluster_name_from_infrastructure_state_output(self):
+        root = Path(__file__).parents[1]
+        rds = (root / "infra/rds-postgresql.tf").read_text(encoding="utf-8")
+        variables = (root / "infra/vars.tf").read_text(encoding="utf-8")
+        self.assertIn("data.terraform_remote_state.infra.outputs.eks_cluster_name", rds)
+        self.assertNotIn('variable "eks_cluster_name"', variables)
+        self.assertNotIn('variable "lambda_security_group_id"', variables)
+        self.assertNotIn('variable "role_arn"', variables)
+
     def test_workflow_dispatch_runs_plan_and_approved_apply_on_develop(self):
         workflow = (Path(__file__).parents[1] / ".github/workflows/pipeline.yml").read_text(encoding="utf-8")
         condition = "github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')"

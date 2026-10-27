@@ -36,7 +36,7 @@ resource "aws_db_instance" "autoflow_rds" {
 }
 
 data "aws_eks_cluster" "autoflow" {
-  name = var.eks_cluster_name
+  name = data.terraform_remote_state.infra.outputs.eks_cluster_name
 }
 
 data "terraform_remote_state" "infra" {

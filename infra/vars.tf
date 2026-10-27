@@ -26,11 +26,6 @@ variable "cidr_vpc" {
   default = "10.0.0.0/16"
 }
 
-variable "role_arn" {
-  description = "ARN da role configurado externamente para o ambiente alvo."
-  type        = string
-  default     = null
-}
 variable "instance_type" {
   default = "t3.medium"
 }
@@ -44,18 +39,6 @@ variable "database_password" {
 variable "database_username" {
   description = "Usuário do banco de dados"
   type        = string
-}
-
-variable "lambda_security_group_id" {
-  description = "Security group da Lambda autorizada a acessar o RDS"
-  type        = string
-  default     = null
-}
-
-variable "eks_cluster_name" {
-  description = "Nome do cluster EKS existente cujo cluster security group acessa o RDS."
-  type        = string
-  default     = "eks-autoflow"
 }
 
 variable "terraform_state_bucket" {
