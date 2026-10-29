@@ -1,6 +1,6 @@
 # AutoFlow — Infraestrutura do RDS
 
-Este repositório declara recursos Terraform para o PostgreSQL gerenciado do AutoFlow na AWS. O código é configuração desejada e não comprova que o RDS ou os recursos de rede estejam implantados.
+Este repositório contém a configuração Terraform final para provisionar o PostgreSQL gerenciado do AutoFlow na AWS. Após reset do Learner Lab, reexecute as pipelines CI/CD correspondentes para provisionar novamente os recursos.
 
 ## Responsabilidade e dependências
 
@@ -18,22 +18,21 @@ O diagrama representa dependências declaradas, não conectividade ou implantaç
 ## Esquema, migrations e seeds
 
 O modelo relacional implementado é versionado pelo Flyway na aplicação `autoflow`, em
-[`backend/src/main/resources/db/migration`](https://github.com/BrunoSousa06/autoflow/tree/develop/backend/src/main/resources/db/migration). As migrations
+[`backend/src/main/resources/db/migration`](https://github.com/autoflow-fiap/autoflow/tree/develop/backend/src/main/resources/db/migration). As migrations
 definem usuários, clientes, veículos, ordens de serviço, serviços, peças/insumos e entidades relacionadas; constraints
 e evolução de schema devem ser lidas nas migrations. O backend executa Flyway conforme sua configuração. Este repositório
 provisiona RDS e não mantém uma cópia independente do schema.
 
 A migration V49 deste repositório está em [`migrations/V49__corrigir_documentos_seeds_demo.sql`](migrations/V49__corrigir_documentos_seeds_demo.sql).
-Há também uma migration V49 da aplicação em [`V49__corrigir_documentos_seeds_demo.sql`](https://github.com/BrunoSousa06/autoflow/blob/develop/backend/src/main/resources/db/migration/V49__corrigir_documentos_seeds_demo.sql),
-e a aplicação possui a V50 [`V50__corrigir_documentos_staff_demo.sql`](https://github.com/BrunoSousa06/autoflow/blob/develop/backend/src/main/resources/db/migration/V50__corrigir_documentos_staff_demo.sql),
+Há também uma migration V49 da aplicação em [`V49__corrigir_documentos_seeds_demo.sql`](https://github.com/autoflow-fiap/autoflow/blob/develop/backend/src/main/resources/db/migration/V49__corrigir_documentos_seeds_demo.sql),
+e a aplicação possui a V50 [`V50__corrigir_documentos_staff_demo.sql`](https://github.com/autoflow-fiap/autoflow/blob/develop/backend/src/main/resources/db/migration/V50__corrigir_documentos_staff_demo.sql),
 que corrige documentos sintéticos de usuários demonstrativos não-clientes. São repositórios/localizações distintos;
-`autoflow-db` não contém V50 em `migrations/`. O checkpoint anterior reportou 47 migrations Flyway validadas,
-antes do reset do Learner Lab; não comprova o estado atual do RDS nem se V49/V50 foram aplicadas no banco. Consulte
+`autoflow-db` não contém V50 em `migrations/`. Consulte
 [detalhes dos seeds](docs/seeds-demonstracao.md).
 
 ## API e justificativa do banco
 
-O contrato central está no [guia OpenAPI da aplicação](https://github.com/BrunoSousa06/autoflow/blob/develop/docs/openapi/README.md) e na [coleção Postman de autenticação CPF/JWT](https://github.com/BrunoSousa06/autoflow/blob/develop/backend/postman/autoflow-serverless-auth.postman_collection.json); este repositório não duplica os contratos. A justificativa técnica da escolha do PostgreSQL e da persistência relacional está em [RFC-001](docs/RFC-001.md).
+O contrato central está no [guia OpenAPI da aplicação](https://github.com/autoflow-fiap/autoflow/blob/develop/docs/openapi/README.md) e na [coleção Postman de autenticação CPF/JWT](https://github.com/autoflow-fiap/autoflow/blob/develop/backend/postman/autoflow-serverless-auth.postman_collection.json); este repositório não duplica os contratos. A justificativa técnica da escolha do PostgreSQL e da persistência relacional está em [RFC-001](docs/RFC-001.md).
 
 ## Configuração Terraform observada
 
@@ -51,7 +50,7 @@ O contrato central está no [guia OpenAPI da aplicação](https://github.com/Bru
 | Proteção contra remoção | Ativada (`deletion_protection = true`) |
 | Enhanced Monitoring | Desativado (`monitoring_interval = 0`) |
 
-A configuração Terraform atual declara acesso privado, storage criptografado, snapshot final obrigatório e proteção contra remoção. Esses são valores desejados no código e não evidência do estado efetivo do RDS. O checkpoint de homologação referido abaixo documenta observações pontuais de runtime, sem comprovar configuração atual após aquela data.
+A configuração Terraform final define acesso privado, storage criptografado, snapshot final obrigatório e proteção contra remoção. Após reset do Learner Lab, reexecute as pipelines CI/CD para provisionar novamente os recursos e dependências do banco.
 
 ## Estado e pré-requisitos
 
@@ -59,7 +58,7 @@ O root declara backend S3 por meio de `infra/backend.tf` e consome o state da in
 
 O bucket/key do backend são parâmetros externos, não arquivos de exemplo versionados. Para uso local, configure `AWS_PROFILE`, `AWS_REGION`, `AWS_EXPECTED_ACCOUNT_ID`, `TF_VAR_aws_profile`, `TF_VAR_aws_allowed_account_ids` (JSON de uma lista), `TF_VAR_terraform_state_bucket`, `TF_VAR_infra_state_key` e os inputs de banco por variáveis de ambiente locais ou por mecanismo seguro. Valide a identidade com `scripts/verify_aws_account.py` antes de acessar AWS. O `terraform init` recebe `-backend-config` para bucket, key, região, `encrypt=true` e `use_lockfile=true`.
 
-O AWS Academy Learner Lab pode restringir políticas, boundaries, SCPs, contexto de `iam:PassRole`, quotas e duração da sessão. A saída `allowed`/`implicitDeny` de `simulate-principal-policy` é apenas uma simulação e **não garante autorização efetiva**. Inventários também se limitam à conta, região e permissões consultadas. A observação do API Gateway/RDS em 13/10/2026, anterior ao reset, está resumida na [arquitetura de infraestrutura](https://github.com/autoflow-fiap/autoflow-infra/blob/develop/docs/api-gateway/arquitetura.md#registro-historico-homologacao); ela não comprova recursos atuais nem autoriza alterações futuras no banco.
+O AWS Academy Learner Lab pode restringir políticas, boundaries, SCPs, contexto de `iam:PassRole`, quotas e duração da sessão. A saída `allowed`/`implicitDeny` de `simulate-principal-policy` é apenas uma simulação e **não garante autorização efetiva**. Inventários também se limitam à conta, região e permissões consultadas. Após reset do Learner Lab, reexecute as pipelines CI/CD dos repositórios na ordem de dependências para provisionar novamente o ambiente.
 
 ## Comandos Terraform
 
@@ -94,5 +93,5 @@ no GitHub, nunca neste README.
 - [`infra/sg.tf`](infra/sg.tf)
 - [`infra/backend.tf`](infra/backend.tf)
 - [Migrations e seeds demonstrativos](docs/seeds-demonstracao.md)
-- [Modelo relacional implementado](https://github.com/BrunoSousa06/autoflow/tree/develop/backend/src/main/resources/db/migration)
+- [Modelo relacional implementado](https://github.com/autoflow-fiap/autoflow/tree/develop/backend/src/main/resources/db/migration)
 - [RFC-001 — PostgreSQL e estratégia relacional](docs/RFC-001.md)

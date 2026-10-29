@@ -39,8 +39,8 @@ O teste cria tabelas temporárias compatíveis com as constraints exercitadas e 
 
 ## Procedimento de homologação
 
-1. Consultar o histórico Flyway do banco de destino. O checkpoint de 13/10/2026 registrou 47 migrations validadas, mas não comprova o estado posterior das V49 e V50; confirmar a aplicação de cada uma e a versão atual antes de qualquer ação. Não editar migrations já executadas.
+1. Após reset do Learner Lab, reexecute as pipelines CI/CD para provisionar o ambiente e executar as migrations Flyway da aplicação. Não editar migrations já executadas.
 2. Revisar o plano de execução da V49 e confirmar que os quatro e-mails estão presentes com seus vínculos usuário/cliente correspondentes. Em conflito ou seed incompleto, interromper e reconciliar os dados antes de prosseguir.
 3. A aplicação Spring Boot executa Flyway conforme configuração do backend; mudanças de schema são entregues pelo repositório `autoflow`. Este repositório não aplica migrations no RDS.
 4. Consultar, após a migration, igualdade do documento entre usuário e cliente e conferir que snapshots de OS dos quatro clientes foram sincronizados, sem alteração da contagem de ordens/históricos.
-5. Validar o login via Lambda com `POST /auth/login`, payload `{"cpf_cnpj":"<documento sintético sem máscara>","senha":"<senha sintética de teste>"}` para cada cliente e confirmar resposta HTTP 200. A migration e os testes locais não comprovam sua aplicação no RDS.
+5. Após a execução das pipelines CI/CD, validar o login via Lambda com `POST /auth/login`, payload `{"cpf_cnpj":"<documento sintético sem máscara>","senha":"<senha sintética de teste>"}` para cada cliente e confirmar resposta HTTP 200.
