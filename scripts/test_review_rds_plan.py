@@ -6,22 +6,141 @@ from review_rds_plan import review_plan_file, validate_plan
 
 
 class ReviewRdsPlanTests(unittest.TestCase):
-    def test_rds_discovers_cluster_name_from_infrastructure_state_output(self):
+    @classmethod
+    def setUpClass(cls):
         root = Path(__file__).parents[1]
-        rds = (root / "infra/rds-postgresql.tf").read_text(encoding="utf-8")
-        variables = (root / "infra/vars.tf").read_text(encoding="utf-8")
+        cls.root = root
+        cls.workflow = (root / ".github/workflows/pipeline.yml").read_text(encoding="utf-8")
+        cls.plan_job = cls.workflow.split("\n  plan:\n", 1)[1].split("\n  apply:\n", 1)[0]
+        cls.apply_job = cls.workflow.split("\n  apply:\n", 1)[1]
+
+    def test_rds_discovers_cluster_name_from_infrastructure_state_output(self):
+        rds = (self.root / "infra/rds-postgresql.tf").read_text(encoding="utf-8")
+        variables = (self.root / "infra/vars.tf").read_text(encoding="utf-8")
         self.assertIn("data.terraform_remote_state.infra.outputs.eks_cluster_name", rds)
+        self.assertRegex(rds, r"bucket\s*=\s*var\.terraform_state_bucket")
+        self.assertNotIn("expected_bucket_owner", rds)
+        self.assertRegex(rds, r"key\s*=\s*var\.infra_state_key")
+        self.assertIn('aws s3api head-object --bucket "$TF_STATE_BUCKET" --key "$TF_VAR_infra_state_key" --expected-bucket-owner "$AWS_EXPECTED_ACCOUNT_ID"', self.plan_job)
         self.assertNotIn('variable "eks_cluster_name"', variables)
         self.assertNotIn('variable "lambda_security_group_id"', variables)
         self.assertNotIn('variable "role_arn"', variables)
 
-    def test_workflow_dispatch_runs_plan_and_approved_apply_on_develop(self):
-        workflow = (Path(__file__).parents[1] / ".github/workflows/pipeline.yml").read_text(encoding="utf-8")
-        condition = "github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')"
-        plan, apply = workflow.split("  plan:", 1)[1].split("  apply:", 1)[0], workflow.split("  apply:", 1)[1]
-        self.assertIn(condition, plan)
-        self.assertIn(condition, apply)
-        self.assertIn("environment: homolog", apply)
+    def test_homolog_and_production_select_their_environment_and_project(self):
+        environment = "${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}"
+        project = "${{ github.ref == 'refs/heads/main' && 'autoflow-production' || 'autoflow' }}"
+        for job in (self.plan_job, self.apply_job):
+            with self.subTest(job="plan" if job is self.plan_job else "apply"):
+                self.assertIn(f"environment: {environment}", job)
+                self.assertIn(f"DEPLOYMENT_ENV: {environment}", job)
+                self.assertIn(f"TF_VAR_project_name: {project}", job)
+        self.assertIn('default = "autoflow"', (self.root / "infra/vars.tf").read_text(encoding="utf-8"))
+
+    def test_resource_names_are_isolated_by_project_name(self):
+        rds = (self.root / "infra/rds-postgresql.tf").read_text(encoding="utf-8")
+        security_groups = (self.root / "infra/sg.tf").read_text(encoding="utf-8")
+        lambda_import = (self.root / "infra/lambda-sg-import.auto.tf").read_text(encoding="utf-8")
+        suffixes = {
+            "rds_identifier": "-db",
+            "db_subnet_group_name": "-db-subnet-group",
+            "final_snapshot_identifier": "-db-final",
+            "rds_security_group_name": "-rds-sg",
+            "lambda_security_group_name": "-lambda-sg",
+        }
+        combined = rds + security_groups
+        for local_name, suffix in suffixes.items():
+            with self.subTest(resource=local_name):
+                self.assertRegex(
+                    combined,
+                    rf'\b{local_name}\s*=\s*"\$\{{var\.project_name\}}{suffix}"',
+                )
+        self.assertIn("values = [local.lambda_security_group_name]", lambda_import)
+
+        names = {
+            project: {name: f"{project}{suffix}" for name, suffix in suffixes.items()}
+            for project in ("autoflow", "autoflow-production")
+        }
+        self.assertEqual(names["autoflow"]["rds_identifier"], "autoflow-db")
+        self.assertEqual(names["autoflow-production"]["rds_identifier"], "autoflow-production-db")
+        self.assertTrue(set(names["autoflow"].values()).isdisjoint(names["autoflow-production"].values()))
+
+    def test_plan_and_apply_use_environment_scoped_aws_credentials_and_states(self):
+        condition = "(github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref != 'refs/heads/main' || github.ref_protected)"
+        for job in (self.plan_job, self.apply_job):
+            with self.subTest(job="plan" if job is self.plan_job else "apply"):
+                self.assertIn(condition, job)
+                self.assertIn("AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}", job)
+                self.assertIn("AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}", job)
+                self.assertIn("AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}", job)
+                self.assertIn("AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}", job)
+                self.assertIn("AWS_TF_STATE_KEY: ${{ vars.AWS_TF_STATE_KEY }}", job)
+                self.assertIn("TF_VAR_infra_state_key: ${{ vars.AWS_INFRA_STATE_KEY }}", job)
+                self.assertIn("python scripts/state_key_policy.py", job)
+                self.assertLess(
+                    job.index("python scripts/state_key_policy.py"),
+                    job.index("aws-actions/configure-aws-credentials@v4"),
+                )
+                self.assertIn("/environments/$DEPLOYMENT_ENV/variables", job)
+                self.assertIn("/environments/$DEPLOYMENT_ENV/secrets", job)
+                self.assertIn("for name in AWS_REGION AWS_EXPECTED_ACCOUNT_ID", job)
+                self.assertIn("for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN DATABASE_USERNAME DATABASE_PASSWORD", job)
+                self.assertIn('[[ "$AWS_EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]', job)
+                self.assertIn("python scripts/verify_aws_account.py", job)
+                self.assertIn('--expected-bucket-owner "$AWS_EXPECTED_ACCOUNT_ID"', job)
+                self.assertIn('backend-config="allowed_account_ids=$TF_VAR_aws_allowed_account_ids"', job)
+        self.assertIn("rds-deployment-config.sha256", self.plan_job)
+        self.assertIn("rds-deployment-config.sha256", self.apply_job)
+
+    def test_feature_pushes_and_pull_requests_run_ci_without_aws_apply(self):
+        self.assertIn("branches: ['**']", self.workflow)
+        self.assertIn("pull_request:", self.workflow)
+        validate_job = self.workflow.split("\n  plan:\n", 1)[0]
+        self.assertNotIn("configure-aws-credentials", validate_job)
+        self.assertNotIn("AWS_ACCESS_KEY_ID", validate_job)
+        condition = "(github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref != 'refs/heads/main' || github.ref_protected)"
+        self.assertIn(condition, self.plan_job)
+        self.assertIn(condition, self.apply_job)
+        self.assertNotIn("ALLOW_DESTRUCTIVE", self.workflow)
+        self.assertIn("python ../scripts/review_rds_plan.py rds.tfplan", self.plan_job)
+        self.assertIn("python ../scripts/review_rds_plan.py rds.tfplan", self.apply_job)
+
+    def test_develop_and_main_pushes_start_apply_only_after_plan_and_environment_gate(self):
+        self.assertIn("github.event_name == 'push'", self.plan_job)
+        self.assertIn("github.event_name == 'push'", self.apply_job)
+        self.assertIn("needs: plan", self.apply_job)
+        self.assertIn("environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}", self.apply_job)
+        self.assertLess(
+            self.apply_job.index("Exigir approvals efetivos no Environment selecionado"),
+            self.apply_job.index("aws-actions/configure-aws-credentials@v4"),
+        )
+
+    def test_apply_requires_effective_approvals_before_aws_credentials(self):
+        approval_gate = self.apply_job.index("Exigir approvals efetivos no Environment selecionado")
+        environment_configuration = self.apply_job.index("Exigir configurações no GitHub Environment selecionado")
+        configuration_gate = self.apply_job.index("Validar configuração do Environment e integridade do plano")
+        aws_credentials = self.apply_job.index("aws-actions/configure-aws-credentials@v4")
+        self.assertLess(environment_configuration, aws_credentials)
+        self.assertLess(approval_gate, aws_credentials)
+        self.assertLess(configuration_gate, aws_credentials)
+        self.assertIn("TERRAFORM_APPLY_APPROVAL_CONFIGURED", self.apply_job)
+        self.assertIn("required_reviewers", self.apply_job)
+        self.assertIn("deployment-branch-policies", self.apply_job)
+        self.assertIn("EXPECTED_BRANCH=develop", self.apply_job)
+        self.assertIn("EXPECTED_BRANCH=main", self.apply_job)
+        self.assertIn("github.ref_protected", self.plan_job)
+        self.assertIn("github.ref_protected", self.apply_job)
+
+    def test_rds_is_private_encrypted_and_protected_with_final_snapshot(self):
+        rds = (self.root / "infra/rds-postgresql.tf").read_text(encoding="utf-8")
+        self.assertIn("publicly_accessible    = false", rds)
+        self.assertIn("storage_encrypted         = true", rds)
+        self.assertIn("skip_final_snapshot       = false", rds)
+        self.assertIn("deletion_protection       = true", rds)
+
+    def test_plan_and_apply_do_not_share_a_hardcoded_account_id(self):
+        self.assertNotRegex(self.workflow, r"\b[0-9]{12}\b")
+        self.assertIn("TF_VAR_aws_allowed_account_ids: '[\"${{ vars.AWS_EXPECTED_ACCOUNT_ID }}\"]'", self.workflow)
+        self.assertIn("aws-actions/configure-aws-credentials@v4", self.workflow)
 
     def test_accepts_no_changes(self):
         self.assertEqual(validate_plan({"resource_changes": []}), 0)

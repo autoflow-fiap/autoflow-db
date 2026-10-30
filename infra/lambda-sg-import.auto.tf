@@ -1,7 +1,7 @@
 data "aws_security_groups" "existing_lambda_sg" {
   filter {
     name   = "group-name"
-    values = ["autoflow-lambda-sg"]
+    values = [local.lambda_security_group_name]
   }
 
   filter {

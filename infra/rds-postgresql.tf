@@ -1,13 +1,19 @@
+locals {
+  rds_identifier            = "${var.project_name}-db"
+  db_subnet_group_name      = "${var.project_name}-db-subnet-group"
+  final_snapshot_identifier = "${var.project_name}-db-final"
+}
+
 resource "aws_db_subnet_group" "autoflow_rds_subnets" {
-  name       = "autoflow-db-subnet-group"
+  name       = local.db_subnet_group_name
   subnet_ids = data.terraform_remote_state.infra.outputs.private_subnet_ids
   tags = {
-    Name = "autoflow-db-subnet-group"
+    Name = local.db_subnet_group_name
   }
 }
 
 resource "aws_db_instance" "autoflow_rds" {
-  identifier        = "autoflow-db"
+  identifier        = local.rds_identifier
   allocated_storage = 20
   engine            = "postgres"
   engine_version    = "17"
@@ -25,13 +31,13 @@ resource "aws_db_instance" "autoflow_rds" {
   storage_encrypted         = true
   backup_retention_period   = 1
   skip_final_snapshot       = false
-  final_snapshot_identifier = "autoflow-db-final"
+  final_snapshot_identifier = local.final_snapshot_identifier
   deletion_protection       = true
   monitoring_interval       = 0
   monitoring_role_arn       = null
 
   tags = {
-    Name = "autoflow-db"
+    Name = local.rds_identifier
   }
 }
 

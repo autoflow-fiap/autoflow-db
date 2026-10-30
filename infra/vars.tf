@@ -49,5 +49,4 @@ variable "terraform_state_bucket" {
 variable "infra_state_key" {
   description = "Key do state de VPC/EKS consumido pelo root RDS."
   type        = string
-  default     = "eks/terraform.tfstate"
 }

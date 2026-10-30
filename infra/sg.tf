@@ -1,5 +1,10 @@
+locals {
+  rds_security_group_name    = "${var.project_name}-rds-sg"
+  lambda_security_group_name = "${var.project_name}-lambda-sg"
+}
+
 resource "aws_security_group" "rds_sg" {
-  name        = "autoflow-rds-sg"
+  name        = local.rds_security_group_name
   description = "Permite trafego do cluster EKS para o RDS"
   vpc_id      = data.terraform_remote_state.infra.outputs.vpc_id
 
@@ -29,7 +34,7 @@ resource "aws_security_group" "rds_sg" {
 
 
 resource "aws_security_group" "lambda_sg" {
-  name        = "autoflow-lambda-sg"
+  name        = local.lambda_security_group_name
   description = "Security Group da Lambda de validacao de CPF"
   vpc_id      = data.terraform_remote_state.infra.outputs.vpc_id
 
