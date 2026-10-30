@@ -2,7 +2,7 @@ name: RDS Pipeline
 
 on:
   push:
-    branches: [develop, main]
+    branches: ['**']
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [develop, main]
@@ -13,7 +13,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: autoflow-db-rds-homolog
+  group: autoflow-db-rds-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -36,59 +36,79 @@ jobs:
         run: terraform -chdir=infra validate
 
   plan:
-    name: Terraform Plan homolog
-    if: github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    name: Terraform Plan por ambiente
+    if: (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref != 'refs/heads/main' || github.ref_protected)
     needs: validate
     runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
     env:
+      DEPLOYMENT_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
       AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}
       TF_STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
       TF_STATE_KEY: ${{ vars.AWS_TF_STATE_KEY }}
       TF_VAR_aws_allowed_account_ids: '["${{ vars.AWS_EXPECTED_ACCOUNT_ID }}"]'
+      TF_VAR_project_name: ${{ github.ref == 'refs/heads/main' && 'autoflow-production' || 'autoflow' }}
       TF_VAR_region_default: ${{ vars.AWS_REGION }}
       TF_VAR_terraform_state_bucket: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
       TF_VAR_infra_state_key: ${{ vars.AWS_INFRA_STATE_KEY }}
       TF_VAR_database_username: ${{ secrets.DATABASE_USERNAME }}
       TF_VAR_database_password: ${{ secrets.DATABASE_PASSWORD }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-      - name: Testar guard de conta AWS
-        run: python -m unittest discover -s scripts -p 'test_verify_aws_account.py' -v
-      - name: Exigir credenciais temporárias e configuração explícita
+      - name: Exigir configurações no GitHub Environment selecionado
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VARIABLE_NAMES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments/$DEPLOYMENT_ENV/variables?per_page=30" --jq '.variables[].name')
+          SECRET_NAMES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments/$DEPLOYMENT_ENV/secrets?per_page=100" --jq '.secrets[].name')
+          for name in AWS_REGION AWS_EXPECTED_ACCOUNT_ID AWS_TERRAFORM_STATE_BUCKET AWS_TF_STATE_KEY AWS_INFRA_STATE_KEY TERRAFORM_APPLY_APPROVAL_CONFIGURED; do
+            if ! grep -Fxq -- "$name" <<< "$VARIABLE_NAMES"; then
+              echo "A Variable $name precisa estar cadastrada no GitHub Environment selecionado." >&2
+              exit 1
+            fi
+          done
+          for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN DATABASE_USERNAME DATABASE_PASSWORD TF_PLAN_ENCRYPTION_KEY; do
+            if ! grep -Fxq -- "$name" <<< "$SECRET_NAMES"; then
+              echo "O Secret $name precisa estar cadastrado no GitHub Environment selecionado." >&2
+              exit 1
+            fi
+          done
+      - name: Validar configuração do Environment e isolamento de State
         shell: bash
         run: |
           set -euo pipefail
           test -n "$AWS_ACCESS_KEY_ID"
           test -n "$AWS_SECRET_ACCESS_KEY"
           test -n "$AWS_SESSION_TOKEN"
-          [[ "$AWS_REGION" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]
-          test -n "$AWS_EXPECTED_ACCOUNT_ID"
+          [[ "$AWS_EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          test "$AWS_REGION" = "us-east-1"
           test -n "$TF_STATE_BUCKET"
           test -n "$TF_STATE_KEY"
           test -n "$TF_VAR_infra_state_key"
+          test -n "$TF_VAR_database_username"
+          test -n "$TF_VAR_database_password"
+          python scripts/state_key_policy.py
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: Validar conta, região, bucket e states remotos
-        env:
-          AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}
+      - name: Validar conta, owner do bucket e States remotos
         shell: bash
         run: |
           set -euo pipefail
           python scripts/verify_aws_account.py
-          test "$(aws ec2 describe-availability-zones --region "$AWS_REGION" --query 'AvailabilityZones[0].RegionName' --output text)" = "$AWS_REGION"
-          aws s3api head-bucket --bucket "$TF_STATE_BUCKET"
-          aws s3api head-object --bucket "$TF_STATE_BUCKET" --key "$TF_VAR_infra_state_key" > /dev/null
+          aws s3api head-bucket --bucket "$TF_STATE_BUCKET" --expected-bucket-owner "$AWS_EXPECTED_ACCOUNT_ID"
+          aws s3api head-object --bucket "$TF_STATE_BUCKET" --key "$TF_VAR_infra_state_key" --expected-bucket-owner "$AWS_EXPECTED_ACCOUNT_ID" > /dev/null
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.16.5"
@@ -98,12 +118,12 @@ jobs:
           AWS_TERRAFORM_STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
           AWS_TF_STATE_KEY: ${{ vars.AWS_TF_STATE_KEY }}
         run: |
-          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws rds describe-db-instances --db-instance-identifier autoflow-db --query 'DBInstances[0].DBInstanceIdentifier' --output text
-          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws rds describe-db-subnet-groups --db-subnet-group-name autoflow-db-subnet-group --query 'DBSubnetGroups[0].DBSubnetGroupName' --output text
-          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws ec2 describe-security-groups --region "$AWS_REGION" --filters Name=group-name,Values=autoflow-rds-sg --query 'SecurityGroups[0].GroupId' --output text
-          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws ec2 describe-security-groups --region "$AWS_REGION" --filters Name=group-name,Values=autoflow-lambda-sg --query 'SecurityGroups[0].GroupId' --output text
+          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws rds describe-db-instances --db-instance-identifier "${{ env.TF_VAR_project_name }}-db" --query 'DBInstances[0].DBInstanceIdentifier' --output text
+          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws rds describe-db-subnet-groups --db-subnet-group-name "${{ env.TF_VAR_project_name }}-db-subnet-group" --query 'DBSubnetGroups[0].DBSubnetGroupName' --output text
+          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws ec2 describe-security-groups --region "$AWS_REGION" --filters Name=group-name,Values="${{ env.TF_VAR_project_name }}-rds-sg" --query 'SecurityGroups[0].GroupId' --output text
+          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws ec2 describe-security-groups --region "$AWS_REGION" --filters Name=group-name,Values="${{ env.TF_VAR_project_name }}-lambda-sg" --query 'SecurityGroups[0].GroupId' --output text
           cd infra
-          terraform init -input=false -reconfigure -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_REGION" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+          terraform init -input=false -reconfigure -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_REGION" -backend-config="expected_bucket_owner=$AWS_EXPECTED_ACCOUNT_ID" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
       - name: Terraform validate
         working-directory: infra
         run: terraform validate
@@ -114,41 +134,85 @@ jobs:
       - name: Bloquear exclusões e substituições
         working-directory: infra
         run: python ../scripts/review_rds_plan.py rds.tfplan
-      - name: Calcular integridade do plano
+      - name: Criptografar e vincular plano ao run e commit
         working-directory: infra
-        run: sha256sum rds.tfplan > rds.tfplan.sha256
-      - name: Armazenar plano confidencial desta execução
+        env:
+          TF_PLAN_ENCRYPTION_KEY: ${{ secrets.TF_PLAN_ENCRYPTION_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$TF_PLAN_ENCRYPTION_KEY"
+          python -c 'import os; assert len(os.environ["TF_PLAN_ENCRYPTION_KEY"]) >= 32, "TF_PLAN_ENCRYPTION_KEY precisa ter ao menos 32 caracteres"'
+          printf '%s\n' "$TF_PLAN_ENCRYPTION_KEY" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --symmetric --cipher-algo AES256 --output rds.tfplan.gpg rds.tfplan
+          printf '%s\0' "$DEPLOYMENT_ENV" "$AWS_EXPECTED_ACCOUNT_ID" "$TF_STATE_BUCKET" "$TF_STATE_KEY" "$TF_VAR_infra_state_key" "$AWS_REGION" "$TF_VAR_project_name" | sha256sum | cut -d ' ' -f 1 > rds-deployment-config.sha256
+          python -c 'import json,os; json.dump({"run_id":os.environ["GITHUB_RUN_ID"],"run_attempt":os.environ["GITHUB_RUN_ATTEMPT"],"commit":os.environ["GITHUB_SHA"]}, open("rds-plan-metadata.json", "w", encoding="utf-8"), sort_keys=True)'
+          sha256sum rds.tfplan.gpg rds-plan-metadata.json rds-deployment-config.sha256 > rds.tfplan.sha256
+          rm -f rds.tfplan
+      - name: Armazenar plano criptografado desta execução
         uses: actions/upload-artifact@v4
         with:
-          name: rds-tfplan-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rds-tfplan-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: |
-            infra/rds.tfplan
+            infra/rds.tfplan.gpg
             infra/rds.tfplan.sha256
+            infra/rds-deployment-config.sha256
+            infra/rds-plan-metadata.json
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+      - name: Limpar cópias temporárias do Plan
+        if: always()
+        working-directory: infra
+        run: rm -f rds.tfplan rds.tfplan.gpg rds.tfplan.sha256 rds-plan-metadata.json rds-deployment-config.sha256
 
   apply:
-    name: Terraform Apply homolog (aprovação requerida)
-    if: github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    name: Terraform Apply por ambiente (aprovação requerida)
+    if: (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref != 'refs/heads/main' || github.ref_protected)
     needs: plan
     runs-on: ubuntu-latest
-    environment: homolog
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
     env:
+      DEPLOYMENT_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
       AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}
       TF_STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
       TF_STATE_KEY: ${{ vars.AWS_TF_STATE_KEY }}
       TF_VAR_aws_allowed_account_ids: '["${{ vars.AWS_EXPECTED_ACCOUNT_ID }}"]'
+      TF_VAR_project_name: ${{ github.ref == 'refs/heads/main' && 'autoflow-production' || 'autoflow' }}
       TF_VAR_region_default: ${{ vars.AWS_REGION }}
       TF_VAR_terraform_state_bucket: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
       TF_VAR_infra_state_key: ${{ vars.AWS_INFRA_STATE_KEY }}
       TF_VAR_database_username: ${{ secrets.DATABASE_USERNAME }}
       TF_VAR_database_password: ${{ secrets.DATABASE_PASSWORD }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-      - name: Exigir guard e Required reviewers efetivos
+      - name: Exigir configurações no GitHub Environment selecionado
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VARIABLE_NAMES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments/$DEPLOYMENT_ENV/variables?per_page=30" --jq '.variables[].name')
+          SECRET_NAMES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments/$DEPLOYMENT_ENV/secrets?per_page=100" --jq '.secrets[].name')
+          for name in AWS_REGION AWS_EXPECTED_ACCOUNT_ID AWS_TERRAFORM_STATE_BUCKET AWS_TF_STATE_KEY AWS_INFRA_STATE_KEY TERRAFORM_APPLY_APPROVAL_CONFIGURED; do
+            if ! grep -Fxq -- "$name" <<< "$VARIABLE_NAMES"; then
+              echo "A Variable $name precisa estar cadastrada no GitHub Environment selecionado." >&2
+              exit 1
+            fi
+          done
+          for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN DATABASE_USERNAME DATABASE_PASSWORD TF_PLAN_ENCRYPTION_KEY; do
+            if ! grep -Fxq -- "$name" <<< "$SECRET_NAMES"; then
+              echo "O Secret $name precisa estar cadastrado no GitHub Environment selecionado." >&2
+              exit 1
+            fi
+          done
+      - name: Exigir approvals efetivos no Environment selecionado
         env:
           APPROVAL_CONFIGURED: ${{ vars.TERRAFORM_APPLY_APPROVAL_CONFIGURED }}
           GH_TOKEN: ${{ github.token }}
@@ -156,64 +220,104 @@ jobs:
         run: |
           set -euo pipefail
           test "$APPROVAL_CONFIGURED" = "true" || {
-            echo "TERRAFORM_APPLY_APPROVAL_CONFIGURED deve ser true no environment homolog." >&2
+            echo "TERRAFORM_APPLY_APPROVAL_CONFIGURED deve ser true no Environment selecionado." >&2
             exit 1
           }
-          REVIEWERS=$(gh api "repos/$GITHUB_REPOSITORY/environments/homolog" --jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]?] | length')
+          ENVIRONMENT_CONFIG=$(gh api "repos/$GITHUB_REPOSITORY/environments/$DEPLOYMENT_ENV")
+          REVIEWERS=$(printf '%s' "$ENVIRONMENT_CONFIG" | jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]?] | length')
           test "$REVIEWERS" -gt 0 || {
-            echo "O environment homolog não possui Required reviewers configurados; Apply bloqueado." >&2
+            echo "O Environment selecionado não possui Required reviewers efetivos; Apply bloqueado." >&2
             exit 1
           }
-      - name: Exigir credenciais temporárias e configuração AWS
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}
+          EXPECTED_BRANCH=develop
+          if [[ "$DEPLOYMENT_ENV" == "production" ]]; then
+            EXPECTED_BRANCH=main
+          fi
+          BRANCH_POLICIES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments/$DEPLOYMENT_ENV/deployment-branch-policies?per_page=100" --jq '.branch_policies[].name' | sort | paste -sd, -)
+          test "$BRANCH_POLICIES" = "$EXPECTED_BRANCH" || {
+            echo "O Environment deve permitir somente a branch $EXPECTED_BRANCH; Apply bloqueado." >&2
+            exit 1
+          }
+      - name: Validar configuração do Environment e integridade do plano
         shell: bash
         run: |
           set -euo pipefail
           test -n "$AWS_ACCESS_KEY_ID"
           test -n "$AWS_SECRET_ACCESS_KEY"
           test -n "$AWS_SESSION_TOKEN"
-          test -n "$AWS_EXPECTED_ACCOUNT_ID"
+          [[ "$AWS_EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          test "$AWS_REGION" = "us-east-1"
           test -n "$TF_STATE_BUCKET"
           test -n "$TF_STATE_KEY"
           test -n "$TF_VAR_infra_state_key"
+          test -n "$TF_VAR_database_username"
+          test -n "$TF_VAR_database_password"
+          python scripts/state_key_policy.py
+      - name: Baixar plano desta execução
+        uses: actions/download-artifact@v4
+        with:
+          name: rds-tfplan-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: infra
+      - name: Revalidar integridade e configuração que gerou o plano
+        working-directory: infra
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check rds.tfplan.sha256
+          python -c 'import json,os,sys; m=json.load(open("rds-plan-metadata.json", encoding="utf-8")); sys.exit(not (m == {"run_id":os.environ["GITHUB_RUN_ID"],"run_attempt":os.environ["GITHUB_RUN_ATTEMPT"],"commit":os.environ["GITHUB_SHA"]}))'
+          printf '%s\0' "$DEPLOYMENT_ENV" "$AWS_EXPECTED_ACCOUNT_ID" "$TF_STATE_BUCKET" "$TF_STATE_KEY" "$TF_VAR_infra_state_key" "$AWS_REGION" "$TF_VAR_project_name" | sha256sum | cut -d ' ' -f 1 > current-deployment-config.sha256
+          cmp --silent rds-deployment-config.sha256 current-deployment-config.sha256 || {
+            echo "O Environment, a conta, o bucket, o State ou o projeto mudou após o Plan; Apply bloqueado." >&2
+            exit 1
+          }
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: Revalidar conta, região, bucket e states remotos
-        env:
-          AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}
+      - name: Revalidar conta, owner do bucket e State remoto
         shell: bash
         run: |
           set -euo pipefail
           python scripts/verify_aws_account.py
-          test "$(aws ec2 describe-availability-zones --region "$AWS_REGION" --query 'AvailabilityZones[0].RegionName' --output text)" = "$AWS_REGION"
-          aws s3api head-bucket --bucket "$TF_STATE_BUCKET"
-          aws s3api head-object --bucket "$TF_STATE_BUCKET" --key "$TF_VAR_infra_state_key" > /dev/null
+          aws s3api head-bucket --bucket "$TF_STATE_BUCKET" --expected-bucket-owner "$AWS_EXPECTED_ACCOUNT_ID"
+          aws s3api head-object --bucket "$TF_STATE_BUCKET" --key "$TF_VAR_infra_state_key" --expected-bucket-owner "$AWS_EXPECTED_ACCOUNT_ID" > /dev/null
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.16.5"
           terraform_wrapper: false
-      - name: Baixar plano desta execução
-        uses: actions/download-artifact@v4
-        with:
-          name: rds-tfplan-${{ github.run_id }}-${{ github.run_attempt }}
-          path: infra
-      - name: Validar integridade do plano
-        working-directory: infra
-        run: sha256sum --check rds.tfplan.sha256
+      - name: Revalidar que State ausente não ocultou recursos existentes
+        env:
+          AWS_TERRAFORM_STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
+          AWS_TF_STATE_KEY: ${{ vars.AWS_TF_STATE_KEY }}
+        run: |
+          set -euo pipefail
+          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws rds describe-db-instances --db-instance-identifier "${{ env.TF_VAR_project_name }}-db" --query 'DBInstances[0].DBInstanceIdentifier' --output text
+          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws rds describe-db-subnet-groups --db-subnet-group-name "${{ env.TF_VAR_project_name }}-db-subnet-group" --query 'DBSubnetGroups[0].DBSubnetGroupName' --output text
+          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws ec2 describe-security-groups --region "$AWS_REGION" --filters Name=group-name,Values="${{ env.TF_VAR_project_name }}-rds-sg" --query 'SecurityGroups[0].GroupId' --output text
+          python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws ec2 describe-security-groups --region "$AWS_REGION" --filters Name=group-name,Values="${{ env.TF_VAR_project_name }}-lambda-sg" --query 'SecurityGroups[0].GroupId' --output text
       - name: Inicializar state remoto existente
         working-directory: infra
-        run: terraform init -input=false -reconfigure -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_REGION" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+        run: terraform init -input=false -reconfigure -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_REGION" -backend-config="expected_bucket_owner=$AWS_EXPECTED_ACCOUNT_ID" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+      - name: Descriptografar plano aprovado e validar integridade OpenPGP
+        working-directory: infra
+        env:
+          TF_PLAN_ENCRYPTION_KEY: ${{ secrets.TF_PLAN_ENCRYPTION_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$TF_PLAN_ENCRYPTION_KEY"
+          python -c 'import os; assert len(os.environ["TF_PLAN_ENCRYPTION_KEY"]) >= 32, "TF_PLAN_ENCRYPTION_KEY precisa ter ao menos 32 caracteres"'
+          printf '%s\n' "$TF_PLAN_ENCRYPTION_KEY" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --decrypt --output rds.tfplan rds.tfplan.gpg
       - name: Revalidar bloqueio de ações destrutivas
         working-directory: infra
         run: python ../scripts/review_rds_plan.py rds.tfplan
       - name: Aplicar exatamente o plano revisado
         working-directory: infra
         run: terraform apply -input=false rds.tfplan
+      - name: Remover cópias locais do plano
+        if: always()
+        working-directory: infra
+        run: rm -f rds.tfplan rds.tfplan.gpg rds.tfplan.sha256 rds-plan-metadata.json rds-deployment-config.sha256 current-deployment-config.sha256

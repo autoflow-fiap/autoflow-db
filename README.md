@@ -50,13 +50,13 @@ O contrato central está no [guia OpenAPI da aplicação](https://github.com/aut
 | Proteção contra remoção | Ativada (`deletion_protection = true`) |
 | Enhanced Monitoring | Desativado (`monitoring_interval = 0`) |
 
-A configuração Terraform final define acesso privado, storage criptografado, snapshot final obrigatório e proteção contra remoção. Após reset do Learner Lab, reexecute as pipelines CI/CD para provisionar novamente os recursos e dependências do banco.
+O nome do RDS, DB Subnet Group, snapshot final e Security Groups deriva de `project_name`. A homologação usa `autoflow`; produção usa `autoflow-production`. Isso separa os recursos também quando os dois ambientes usam a mesma conta AWS. Após reset do Learner Lab, reexecute as pipelines CI/CD para provisionar novamente os recursos e dependências do banco.
 
 ## Estado e pré-requisitos
 
 O root declara backend S3 por meio de `infra/backend.tf` e consome o state da infraestrutura em `infra/rds-postgresql.tf`. Antes de qualquer inicialização ou plano remoto, confirme bucket, key, responsabilidade e state autoritativo com os responsáveis. Não inicialize um state vazio sobre recursos que possam existir.
 
-O bucket/key do backend são parâmetros externos, não arquivos de exemplo versionados. Para uso local, configure `AWS_PROFILE`, `AWS_REGION`, `AWS_EXPECTED_ACCOUNT_ID`, `TF_VAR_aws_profile`, `TF_VAR_aws_allowed_account_ids` (JSON de uma lista), `TF_VAR_terraform_state_bucket`, `TF_VAR_infra_state_key` e os inputs de banco por variáveis de ambiente locais ou por mecanismo seguro. Valide a identidade com `scripts/verify_aws_account.py` antes de acessar AWS. O `terraform init` recebe `-backend-config` para bucket, key, região, `encrypt=true` e `use_lockfile=true`.
+O bucket e as keys do backend são parâmetros externos, não arquivos de exemplo versionados. Para uso local, configure `AWS_PROFILE`, `AWS_REGION`, `AWS_EXPECTED_ACCOUNT_ID`, `TF_VAR_aws_profile`, `TF_VAR_aws_allowed_account_ids` (JSON de uma lista), `TF_VAR_project_name`, `TF_VAR_terraform_state_bucket`, `TF_VAR_infra_state_key` e os inputs de banco por variáveis de ambiente locais ou por mecanismo seguro. Valide a identidade com `scripts/verify_aws_account.py` antes de acessar AWS. O `terraform init` recebe `-backend-config` para bucket, key, região, owner esperado, `encrypt=true` e `use_lockfile=true`.
 
 O AWS Academy Learner Lab pode restringir políticas, boundaries, SCPs, contexto de `iam:PassRole`, quotas e duração da sessão. A saída `allowed`/`implicitDeny` de `simulate-principal-policy` é apenas uma simulação e **não garante autorização efetiva**. Inventários também se limitam à conta, região e permissões consultadas. Após reset do Learner Lab, reexecute as pipelines CI/CD dos repositórios na ordem de dependências para provisionar novamente o ambiente.
 
@@ -76,16 +76,17 @@ Para usar backend remoto, somente após reconciliar state, passe os parâmetros 
 
 Consulte o [catálogo de variables e secrets](docs/variables-and-secrets.md) e o [histórico](docs/variables-changelog.md) para configurar GitHub Actions e inputs Terraform.
 
-O workflow `.github/workflows/pipeline.yml` executa CI em PRs e pushes para `develop`/`main` (guard de conta, `fmt`,
-`init -backend=false` e `validate`). CD somente por `workflow_dispatch` em `develop`, no Environment `homolog`: valida
-conta e states, cria Plan e bloqueia destruições/substituições sem autorização explícita. Apply depende do input `apply`
-e de `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true`; esse guard orienta configurar Required reviewers, mas não comprova
-que estejam efetivamente configurados. A execução do deploy pelo GitHub Actions não foi comprovada por este checkout.
+O workflow `.github/workflows/pipeline.yml` executa CI sem acesso AWS em Pull Requests e pushes de branches, incluindo branches de feature. `develop` seleciona o GitHub Environment `homolog` e `project_name=autoflow`; `main` seleciona `production` e `project_name=autoflow-production`. Push para `develop` executa Plan e, após os gates, Apply. Em `main`, Plan e Apply também exigem que o GitHub reporte a branch protegida (`github.ref_protected`). `workflow_dispatch` é limitado a `develop` e `main`; PRs e branches de feature nunca executam Plan ou Apply.
 
-O workflow referencia Secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `DATABASE_USERNAME`
-e `DATABASE_PASSWORD`. Variables incluem `AWS_REGION`, `AWS_EXPECTED_ACCOUNT_ID`, `AWS_TERRAFORM_STATE_BUCKET`,
-`AWS_TF_STATE_KEY`, `AWS_INFRA_STATE_KEY` e `TERRAFORM_APPLY_APPROVAL_CONFIGURED`. Os valores devem ser cadastrados
-no GitHub, nunca neste README.
+Plan e Apply são jobs vinculados ao Environment escolhido pela branch. Antes de configurar credenciais, o workflow consulta a API do GitHub para exigir que Variables e nomes de Secrets necessários estejam cadastrados explicitamente no Environment selecionado; valores definidos somente no nível do repositório ou organização não satisfazem esse gate. O workflow exige `AWS_EXPECTED_ACCOUNT_ID` com 12 dígitos e compara esse valor à identidade STS antes de consultar States ou inicializar o backend. Também valida que o owner do bucket corresponde à conta esperada.
+
+As keys do root RDS e do State VPC/EKS consumido são fornecidas por Variables do GitHub Environment selecionado; o código não fixa sufixos nem escolhe State legado por default. As duas keys precisam começar pelo prefixo do Environment (`homolog/` ou `production/`), ser distintas e corresponder à key do root produtor VPC/EKS. `scripts/state_key_policy.py` falha fechado para Environment ou key ausente, prefixo incorreto, caminho inválido e keys iguais. As keys autoritativas e a presença dos objetos S3 não foram verificadas nesta alteração; nenhum State foi migrado ou inicializado.
+
+O Apply valida que há Required reviewers efetivos, que a política de branch do Environment permite somente a branch correspondente e que `TERRAFORM_APPLY_APPROVAL_CONFIGURED` está configurada como `true` antes de usar credenciais AWS. Configure os Environments e restrinja `homolog` à branch `develop` e `production` à `main`; mantenha `TERRAFORM_APPLY_APPROVAL_CONFIGURED` diferente de `true` até os gates estarem presentes. O Plan gera um artifact criptografado com AES-256 via OpenPGP e retenção de um dia; o Apply verifica integridade, run, commit, Environment, conta esperada, bucket, keys, região e projeto antes de descriptografar e aplicar exatamente o plano revisado. A chave de criptografia é o Secret `TF_PLAN_ENCRYPTION_KEY` do Environment e não é versionada. O guard `scripts/review_rds_plan.py` continua bloqueando qualquer `delete` ou substituição de recurso.
+
+Para homologação e produção, cadastre os mesmos nomes de Variables e Secrets em cada GitHub Environment, com valores próprios para cada ambiente. As Variables necessárias são `AWS_REGION`, `AWS_EXPECTED_ACCOUNT_ID`, `AWS_TERRAFORM_STATE_BUCKET`, `AWS_TF_STATE_KEY`, `AWS_INFRA_STATE_KEY` e `TERRAFORM_APPLY_APPROVAL_CONFIGURED`. Os Secrets necessários são `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` e `TF_PLAN_ENCRYPTION_KEY`. O workflow rejeita valores definidos somente no escopo do repositório ou organização. `AWS_REGION` deve corresponder à região do bucket e dos recursos do Environment. Nunca registre valores de Secrets no repositório.
+
+O desenho não fixa Account ID nem ARN e pode ser usado em diferentes Learner Labs sem alterar o código: configure credenciais temporárias, conta esperada, bucket e states de cada Environment. A portabilidade do Terraform não garante permissões IAM ou cotas na conta de destino. A configuração real dos GitHub Environments, reviewers, buckets, States e permissões AWS não é comprovada por validações locais.
 
 ## Fontes
 

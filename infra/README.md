@@ -8,7 +8,9 @@ O ingresso TCP 5432 é limitado ao `clusterSecurityGroupId` obtido por `data.aws
 
 ## State e inicialização
 
-O backend S3 não fixa bucket, chave ou região. Inicialize com os parâmetros aprovados externamente, incluindo `key=rds/terraform.tfstate`, região `us-east-1`, criptografia e locking conforme suporte do bucket. `TF_VAR_terraform_state_bucket` é obrigatório e deve apontar ao bucket externo correto; `TF_VAR_infra_state_key` assume `eks/terraform.tfstate`. Não versionar configurações locais com identificadores de ambiente.
+O backend S3 não fixa bucket, key ou região. `AWS_TF_STATE_KEY` seleciona o State deste root e `AWS_INFRA_STATE_KEY` seleciona o State VPC/EKS consumido; ambas são obrigatórias no GitHub Environment e precisam começar pelo prefixo desse Environment. O sufixo é definido externamente. `AWS_INFRA_STATE_KEY` deve coincidir exatamente com `AWS_TF_STATE_KEY_INFRA` do Environment correspondente em `autoflow-infra`. Não versionar IDs de conta ou configurações locais.
+
+Não presuma que uma key configurada aponta a um objeto existente nem que um State vazio autoriza criação. A presença atual dos objetos, bucket, owner, lineage e identidade dos recursos não foi verificada nesta alteração. Não inicializar States vazios, copiar ou migrar State automaticamente; reconciliar esses dados antes de qualquer deploy.
 
 O nome do cluster é lido do output `eks_cluster_name` no state da infraestrutura. A autenticação do provider usa a configuração de credenciais AWS do processo e `aws_allowed_account_ids`, sem provisionamento de IAM. Execute/aplique primeiro a infraestrutura com esse output publicado.
 
