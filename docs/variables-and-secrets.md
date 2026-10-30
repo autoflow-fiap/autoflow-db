@@ -48,7 +48,7 @@ Não reutilize credenciais AWS ou credenciais do banco entre ambientes sem decis
 
 `project_name` já existe em `infra/vars.tf`; o workflow define seu valor por branch sem criar variável Terraform redundante. Ele compõe os nomes do RDS, DB Subnet Group, snapshot final e Security Groups. O nome `autoflow` mantém os nomes atuais de homologação; o prefixo `autoflow-production` evita colisão quando os ambientes compartilham uma conta.
 
-O workflow valida `AWS_EXPECTED_ACCOUNT_ID` como 12 dígitos antes de configurar o acesso AWS e compara a identidade retornada por STS antes de consultar recursos ou inicializar Terraform. O backend S3 recebe o owner esperado; o objeto remoto VPC/EKS é verificado com `head-object --expected-bucket-owner` antes do init. Terraform 1.16.5 não aceita `expected_bucket_owner` dentro do data source embutido `terraform_remote_state`. Assim, o código pode ser reutilizado em diferentes Learner Labs alterando somente as configurações de cada Environment. A portabilidade não comprova permissões IAM, limites ou disponibilidade de serviços na conta de destino.
+O workflow valida `AWS_EXPECTED_ACCOUNT_ID` como 12 dígitos antes de configurar o acesso AWS e compara a identidade retornada por STS antes de consultar recursos ou inicializar Terraform. O backend S3 e o `terraform_remote_state` usam `allowed_account_ids` derivado dessa variável externa. O bucket e o objeto remoto VPC/EKS são verificados com `head-bucket`/`head-object --expected-bucket-owner` pela AWS CLI antes do init. Assim, o código pode ser reutilizado em diferentes Learner Labs alterando somente as configurações de cada Environment. A portabilidade não comprova permissões IAM, limites ou disponibilidade de serviços na conta de destino.
 
 ## Inputs Terraform observados
 
@@ -65,7 +65,7 @@ O workflow valida `AWS_EXPECTED_ACCOUNT_ID` como 12 dígitos antes de configurar
 | `terraform_state_bucket` | Bucket do State remoto consumido | Obrigatório | Variable `AWS_TERRAFORM_STATE_BUCKET`. |
 | `infra_state_key` | Key do State VPC/EKS | Obrigatória; sem default | Variable `AWS_INFRA_STATE_KEY` no Environment. |
 
-O backend S3 não fixa bucket, key ou região no código. O workflow inicializa o State com os parâmetros do Environment, `encrypt=true`, `use_lockfile=true` e `expected_bucket_owner`. O input `infra_state_key` mantém a referência ao State VPC/EKS daquele mesmo ambiente.
+O backend S3 não fixa bucket, key ou região no código. O workflow deriva `allowed_account_ids` de `AWS_EXPECTED_ACCOUNT_ID` e inicializa o State com os parâmetros do Environment, `encrypt=true` e `use_lockfile=true`. O mesmo allowlist é usado pelo `terraform_remote_state`; as chamadas AWS CLI mantêm `--expected-bucket-owner` para validar o owner do bucket e dos objetos antes do `terraform init`. O input `infra_state_key` mantém a referência ao State VPC/EKS daquele mesmo ambiente.
 
 ## CI, Plan e Apply
 
