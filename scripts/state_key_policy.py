@@ -1,4 +1,4 @@
-"""Valida keys de State compatíveis com os States autoritativos por ambiente."""
+"""Valida keys de State por ambiente sem fixar os sufixos externos."""
 
 from __future__ import annotations
 
@@ -6,11 +6,6 @@ import os
 import sys
 
 ENVIRONMENTS = {"homolog", "production"}
-HOMOLOG_STATE_KEYS = {
-    "rds": "rds/terraform.tfstate",
-    "infra": "eks/terraform.tfstate",
-}
-PRODUCTION_RDS_STATE_KEY = "production/rds/terraform.tfstate"
 
 
 def validate_state_keys(
@@ -18,7 +13,7 @@ def validate_state_keys(
     rds_state_key: str | None,
     infra_state_key: str | None,
 ) -> None:
-    """Rejeita keys ausentes, cruzadas ou diferentes da convenção por root."""
+    """Rejeita keys ausentes, cruzadas ou iguais entre os roots consumidos."""
     if deployment_environment not in ENVIRONMENTS:
         raise ValueError("Environment inválido para validar Terraform States.")
 
@@ -33,23 +28,13 @@ def validate_state_keys(
         if any(part in {"", ".", ".."} for part in key.split("/")):
             raise ValueError("Key Terraform contém segmento de caminho inválido.")
 
-    if deployment_environment == "homolog":
-        if rds_state_key != HOMOLOG_STATE_KEYS["rds"] or infra_state_key != HOMOLOG_STATE_KEYS["infra"]:
+    prefix = f"{deployment_environment}/"
+    for key in keys:
+        assert isinstance(key, str)
+        if not key.startswith(prefix) or len(key) == len(prefix):
             raise ValueError(
-                "Keys incompatíveis com os States RDS e VPC/EKS existentes de homologação."
+                f"Cada key Terraform deve iniciar com o prefixo obrigatório {prefix}."
             )
-        return
-
-    if rds_state_key != PRODUCTION_RDS_STATE_KEY:
-        raise ValueError(
-            "A key RDS de produção deve permanecer isolada no root production/rds."
-        )
-    # O sufixo VPC/EKS ainda requer alinhamento com o Environment do producer.
-    if not infra_state_key.startswith("production/"):
-        raise ValueError(
-            "A key de infraestrutura de produção deve permanecer sob production/ "
-            "e ser configurada para corresponder ao root produtor autoflow-infra."
-        )
 
 
 def main() -> int:
@@ -63,7 +48,7 @@ def main() -> int:
         print(str(error), file=sys.stderr)
         return 1
 
-    print("Keys Terraform RDS e infraestrutura atendem à política do Environment selecionado.")
+    print("Keys Terraform RDS e infraestrutura atendem ao Environment e são distintas.")
     return 0
 
 
