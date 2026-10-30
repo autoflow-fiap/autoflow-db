@@ -1,26 +1,153 @@
-## Diagrama ER
+# Diagrama ER do AutoFlow
 
-Abaixo segue o diagrama ER do banco de dados com todo o relacionamento
+O diagrama representa as relações relacionais declaradas nas migrations Flyway do backend e o mapeamento JPA atual. Campos de identificador que não possuem chave estrangeira não são desenhados como relacionamentos.
 
-[![](https://mermaid.ink/img/pako:eNrNWFtv4jgU_ivIz-2IS1subxFltZFaGBGYhxVS5CYueCexs76g7tD-9z0GAiSxA3R2V8MLYJ-7zznfsTco4jFBA0TEI8VLgdOFWLAGfIZP_mg8GwWNTb5iPpSpBo1PV6QSlC0bjKfEshxlr2HEsj8tW4ok5JUzGxdJMU0s61JhpWXZHi01FpSHR7s-zI_8z7eRP5w_Tc46YlaihBKmSGh1McUiwmUOzLiFNEtwkTQXAcFOuNXMeTD3pv7kJ-PtilzNOUjCVjZbBU-I1dJgNP3mDz9taUwimuKkscYJFxb6mMhI0AgX4vrCwRrMGljRtT1-X0dDLwj9cTB__rRphvAvjZmiMY6vMlrRzG7WZPo4eg73IbvULJ0SwUMur0rPfNNVifvtmkzISZxJtN-3Va4xb01opBNuN69auzFWRNGUmB84xC9EKC0qBRZDW2JcKhrxMCURZuZHUcNR0AktBUKKYw7enKWNOIsSTSvEeUaekCZYx9wqkLyRSEPa5pqxS_MrZTihP2ooIMqCLDVx7esEviBkSm8FlWplbzWOeJphqO0UxPFQ8e-EhSssV1aRVmqow5oIWlnIW0YFvopFkDVfFvW4SygMZt5sHoS_-8FsMr2gpswKFzFJQ0nEupo8dTV3PnXhmChQYVfqgJ8SL0H5vnYucTD_njz5Q3_mPV7kYr1zV7bgGofPldUhucsU587B7AuSYTgEHIMODnJckG4PmD-DxfFoOAoCg6TVqOWKJU9AgTI2OnKlvJhB44G6ljq9MMIWWKgEPtQMjIDJ5RMQBKWj8GUj0mH0MNAZZoTFhMERupWGMZUZZ3RNkrqMLmoqnM909NWbTkLvERJ4Mvae_ssaNbwOXNiJjfbN5lpUOtP8MsHXNfsCwEC628LuMHZEjhQfes8wgP8f_a2cpTssF9IKK5-O2D6rXqi1PeTZvc3r3BXppqAK8tC9vSTCWh6ZfoHaPweGBaoziHY2D-wEOUhLCQ3TzD2uuW2XI-EuY365sW9Pkk9-rntPvl-5QpX3C_ej8lx5ctey10oBCqqF4-oFzrb_86DqsLMEVf-WvW6YOvWGy18RwwqRGk9m_m_-0Bt6F_Y_d6Dq70yYWdsE3EGVqcuyZ-d7IGFry-xfxk4iBHe3UOyahA9vMvz99pa_H98MBo0FOnkGQXaGzfEtxDCcRAZVHkvedwzF66vhOrnkocrbBXdxHRAaGuHJdeoooshik2MbjI3oCvgh5xhyjVjbLIountjf6zSVB1WjbodnqAr_B0nWHmdYD2B5Cbe185QMQDdoKWiMBkpocgNnJwAZ4C_aGPELpFYEOgXaRSnWb7cxFt9vI276HlqwD-CHS94fnKe5CMH1coUGrziR8E9nJt_3740HEjOYiiHXTKFBu9vcykCDDXpDg8793ZdOp9vvd1r9VrPT7nVv0N9o0Gp2v_Ta7V6r1Wn2Hrp3Dx836MdWaxPW-w_NXqfX7Pbv7tv3rRtEYqq4eN49d25fPT_-AY27sLc?type=png)](https://mermaid.live/edit#pako:eNrNWFtv4jgU_ivIz-0IynApb4iy2kgtjLjMwwopchMXvJPYWV9Qd2j_-x4TAiSxE-jMrIYXwD53n3O-Y-9QwEOCBoiIB4rXAscrsWIN-IwevfFkMZ43dtmK-VCmGjQ8X5FKULZuMB4Ty3KQvPgBS_62bCkSkRfObFwkxjSyrEuFlZZFe7TUWFDun-x6Nz-yP1_H3mj5OK11xKwEESVMEd_qYoxFgIscmHELaRLhPGkmAoIdcauZy_lyOPOmPxhvV-QqzkEStrHZKnhErJbOx7Ov3ujDloYkoDGOGlsccWGhD4kMBA1wLq7PHKzBrIEV3drj92U8Gs59bzJfPn3YNEP4j8ZM0RCHVxmtaGI3azp7GD_5h5BdapaOieA-l1elZ7bpqsTDdkUmZCTOJDrs2yrXmLclNNARt5tXrt0QK6JoTMwP7ONnIpQWpQILoS0xLhUNuB-TADPzI6_hJOiMlgIhxSEHb2ppA86CSNMScZaRZ6QR1iG3CiSvJNCQtplm7NL8QhmO6PcKCoiyIGtNXPs6gi8ImdJ7QYVaOViNAx4nGGo7BnHcV_wbYf4Gy41VpJUa6rAiglYW8ppQga9iEWTL13k97hLy54vhYjn3__Tmi-nsgpoyK1yEJPYlEdty8lTVXH3qwjFRoMKu1AE_JV6D8kPtXOJg9j199EbeYvhwkYvVzl3ZgiscriurY3IXKerOwewLkmA4BByCDg5yXJBuD5i3gMXJeDSezw2SlqOWKZY8AgXK2OjIleJiAo0H6lrq-MIIW2ChFHhfMzACJpcPQBCUjsKXjUjH0cNAp58QFhIGR-hW6odUJpzRLYmqMjqvKXc-s_GX4WzqDx8ggaeT4eOvrFHD68CFVGxwaDbXolJN80sE31bsCwAD6W4L6WGkRI4UHw2fYAD_P_pbMUtTLBfSCisfjtghq56ptT1k2b3P68wV6aagCvLQvb0mwloeiX6G2q8DwxxVDaLV5oGdIANpKaFhmrnHNbelOeKnGfPbjX0Hkmzyc917sv3SFaq4n7sfFefKs7uWvVZyUFAuHFcvcLb9HwdVh50FqPpZ9rph6twbLn9HDMtFajJdeH94o-FoeGH_cweq-s6EmbVNwB1UmboselbfAwnbWmb_InYSIbi7hWLXJHx8k-Fvt7f87fRmMGis0NkzCLIz7E5vIYbhLDKo9FjyljLkr6-G6-ySh0pvF9zFdURoaIRn16mTiDyLTY5tMDaiS-CHnGPINWJtsyi6eGJ_q9JUHFSNuhTPUBn-j5KsPc6wHsHyEm5r5ykYgG7QWtAQDZTQ5AbOTgAywF-0M-JXSG0IdAqURinUr7chFt9uA276Hlqxd-CHS95fnMeZCMH1eoMGLziS8E8nJt8P741HEjOYihHXTKHBXbe3l4EGO_SKBu3O50_tdu_-vt26bzXbd33Y_RcNWs3ep_7dXb_Vajf73d7n7vsN-r7X2oT1-26z3-62Or1es9Pp3CASUsXFU_rcuX_1fP8Pj_ywvQ)
+```mermaid
+erDiagram
+    USUARIOS {
+        BIGINT id PK
+        VARCHAR email
+        VARCHAR cpf_cnpj
+        VARCHAR senha
+        VARCHAR role
+    }
+    CLIENTES {
+        BIGINT id PK
+        BIGINT usuario_id FK
+        VARCHAR nome
+        VARCHAR cpf_cnpj
+        VARCHAR telefone
+        VARCHAR email
+        VARCHAR status
+    }
+    VEICULOS {
+        BIGINT id PK
+        BIGINT cliente_id FK
+        VARCHAR marca
+        VARCHAR modelo
+        INTEGER ano
+        VARCHAR placa
+    }
+    SERVICOS {
+        BIGINT id PK
+        VARCHAR nome
+        NUMERIC valor
+        VARCHAR descricao
+        BOOLEAN ativo
+    }
+    PECAS_INSUMOS {
+        BIGINT id PK
+        VARCHAR nome
+        INTEGER quantidade
+        NUMERIC valor
+        VARCHAR tipo
+    }
+    ORDEM_SERVICO {
+        BIGINT id PK
+        VARCHAR numero_os
+        BIGINT cliente_id
+        VARCHAR cliente_nome
+        VARCHAR cliente_cpf_cnpj
+        VARCHAR cliente_email
+        VARCHAR cliente_telefone
+        BIGINT veiculo_id FK
+        BIGINT diagnostico_mecanico_id FK
+        VARCHAR status
+        TIMESTAMP data_abertura
+    }
+    ORDEM_SERVICO_STATUS_HISTORICO {
+        BIGINT id PK
+        BIGINT ordem_servico_id FK
+        VARCHAR numero_os
+        VARCHAR status
+        TIMESTAMP registrado_em
+    }
+    ORDEM_SERVICO_SERVICO_SOLICITADO {
+        BIGINT id PK
+        BIGINT servico_id
+        BIGINT ordem_servico_id FK
+        BIGINT reparo_adicional_id FK
+        VARCHAR nome
+        NUMERIC valor
+        VARCHAR status
+    }
+    ORDEM_SERVICO_SERVICO_ITEM_NECESSARIO {
+        BIGINT servico_solicitado_id FK
+        INTEGER ordem
+        BIGINT peca_insumo_id
+        VARCHAR nome
+        VARCHAR tipo
+        NUMERIC valor_unitario
+        INTEGER quantidade
+    }
+    REPARO_ADICIONAL {
+        BIGINT id PK
+        BIGINT ordem_servico_id FK
+        BIGINT mecanico_id FK
+        BIGINT orcamento_id FK
+        VARCHAR status
+        TIMESTAMP criado_em
+    }
+    ORCAMENTO {
+        BIGINT id PK
+        BIGINT ordem_servico_id FK
+        VARCHAR numero_os
+        VARCHAR tipo
+        INTEGER versao
+        VARCHAR status
+        VARCHAR cliente_nome_snapshot
+        VARCHAR veiculo_placa_snapshot
+    }
+    ORCAMENTO_SERVICO_ITEM {
+        BIGINT orcamento_id FK
+        INTEGER ordem
+        BIGINT servico_id
+        VARCHAR nome
+        NUMERIC valor
+    }
+    ORCAMENTO_ITEM_NECESSARIO_ITEM {
+        BIGINT orcamento_id FK
+        INTEGER ordem
+        BIGINT peca_insumo_id
+        BIGINT servico_os_id
+        VARCHAR nome
+        NUMERIC valor_total
+    }
+    NOTIFICACAO {
+        BIGINT id PK
+        BIGINT orcamento_id
+        BIGINT cliente_id
+        VARCHAR canal
+        VARCHAR destinatario
+        VARCHAR status
+        TIMESTAMP criada_em
+    }
 
+    USUARIOS o|--o{ CLIENTES : usuario_id
+    CLIENTES ||--o{ VEICULOS : cliente_id
+    VEICULOS ||--o{ ORDEM_SERVICO : veiculo_id
+    USUARIOS o|--o{ ORDEM_SERVICO : diagnostico_mecanico_id
+    ORDEM_SERVICO ||--o{ ORDEM_SERVICO_STATUS_HISTORICO : ordem_servico_id
+    ORDEM_SERVICO o|--o{ ORDEM_SERVICO_SERVICO_SOLICITADO : ordem_servico_id
+    REPARO_ADICIONAL o|--o{ ORDEM_SERVICO_SERVICO_SOLICITADO : reparo_adicional_id
+    ORDEM_SERVICO_SERVICO_SOLICITADO ||--o{ ORDEM_SERVICO_SERVICO_ITEM_NECESSARIO : servico_solicitado_id
+    ORDEM_SERVICO ||--o{ REPARO_ADICIONAL : ordem_servico_id
+    USUARIOS ||--o{ REPARO_ADICIONAL : mecanico_id
+    ORCAMENTO o|--o| REPARO_ADICIONAL : orcamento_id
+    ORDEM_SERVICO ||--o{ ORCAMENTO : ordem_servico_id
+    ORCAMENTO ||--o{ ORCAMENTO_SERVICO_ITEM : orcamento_id
+    ORCAMENTO ||--o{ ORCAMENTO_ITEM_NECESSARIO_ITEM : orcamento_id
+```
 
-### Explicação de relacionamentos
+## Relacionamentos e decisões de persistência
 
+- `clientes.usuario_id` é uma FK opcional em V5, e a entidade Java usa `@OneToOne`. V5 não declara constraint `UNIQUE` para essa coluna; a cardinalidade permitida pela migration pode ser mais ampla que o mapeamento JPA.
+- Cada veículo tem `cliente_id` obrigatório e FK para `clientes` em V1. A entidade Java usa `@ManyToOne`, mas não declara `nullable = false`; o diagrama segue a obrigatoriedade do schema Flyway.
+- Cada ordem referencia obrigatoriamente um veículo e, opcionalmente, o mecânico do diagnóstico. V10 remove a FK de `ordem_servico.cliente_id` e adiciona os campos de cliente copiados como snapshot; portanto, esse `cliente_id` não é relação vigente com `clientes`.
+- O histórico de status referencia a ordem por FK (V17). `HistoricoStatusOsEntity` representa o identificador como campo escalar, embora o schema mantenha a integridade referencial.
+- Um serviço solicitado pode pertencer a uma ordem ou a um reparo adicional; os dois vínculos são opcionais no banco. Seus itens necessários são armazenados na tabela de coleção ligada ao serviço solicitado. `servico_id` e `peca_insumo_id` são identificadores sem FK para o catálogo.
+- Reparo adicional referencia obrigatoriamente uma ordem e um mecânico. `orcamento_id` é opcional e tem índice único parcial (V43), limitando a associação a um orçamento por reparo e vice-versa.
+- Orçamento referencia obrigatoriamente uma ordem. Os serviços e itens do orçamento ficam em tabelas de coleção ligadas ao orçamento; os dados de cliente e veículo são snapshots. Os campos `servico_id`, `peca_insumo_id` e `servico_os_id` nessas coleções não são FKs.
+- `notificacao.orcamento_id` e `notificacao.cliente_id` não possuem FKs nas migrations; por isso o diagrama não representa essas colunas como relacionamentos.
 
-Clientes, usuários e veículos
-Cliente ↔ Usuário: 1 para 1. clientes.usuario_id aponta para um usuário. O vínculo é opcional no mapeamento; um cliente pode não ter usuário associado. Está definido em ClienteEntity.java.
-Cliente → Veículos: 1 para muitos. Um cliente pode ter vários veículos. Cada veículo aponta para um cliente por veiculos.cliente_id; esse campo não está marcado como obrigatório na entidade. Está definido em VeiculoEntity.java.
-Ordens de serviço
-Veículo → Ordens de serviço: 1 para muitos. Um veículo pode aparecer em várias ordens. Toda ordem deve ter um veículo, pois veiculo_id está marcado como obrigatório em OrdemServicoEntity.java.
-Usuário → Ordens de serviço: 1 para muitos, como mecânico do diagnóstico. O diagnóstico é embutido na ordem, mas seu campo mecanico é uma associação para usuarios. A coluna diagnostico_mecanico_id fica na tabela ordem_servico, não em uma tabela de diagnóstico separada. Veja DiagnosticoEntity.java.
-Os dados de cliente na ordem — cliente_id, nome, CPF/CNPJ, e-mail e telefone — são um snapshot. Embora exista um cliente_id, ele está dentro de um objeto embutido e não é uma associação JPA: a ordem guarda os dados copiados do cliente naquele momento.
-Serviços e itens de uma ordem
-Ordem de serviço → Serviços solicitados: 1 para muitos. Cada serviço solicitado pode estar ligado a uma ordem pela coluna ordem_servico_id.
-Reparo adicional → Serviços solicitados: 1 para muitos. Serviços de um reparo adicional podem apontar para ele por reparo_adicional_id. Esses vínculos são opcionais na entidade do serviço solicitado, permitindo que a associação seja com uma ordem ou com um reparo adicional. Confira ServicoSolicitadoEntity.java e ReparoAdicionalEntity.java.
-Serviço solicitado → Itens necessários: 1 para muitos. Os itens ficam na tabela de coleção ordem_servico_servico_item_necessario, ligada ao serviço solicitado. Os dados do item, como nome e valor, são guardados como uma fotografia; peca_insumo_id é apenas um identificador numérico, não uma associação JPA.
-Orçamentos e tabelas de coleção
-Orçamento → Serviços do orçamento: 1 para muitos. Os serviços são armazenados em orcamento_servico_item.
-Orçamento → Itens do orçamento: 1 para muitos. Os itens ficam em orcamento_item_necessario_item.
-Os dados de cliente e veículo no orçamento também são snapshots, incorporados na tabela orcamento, não relações com clientes ou veiculos.
-ordem_servico_id, servico_id, peca_insumo_id e servico_os_id nesses dados são IDs armazenados como valores, não vínculos JPA. A entidade do orçamento está em OrcamentoPersistenceEntity.java.
+As migrations V49 e V50 da aplicação alteram documentos de registros demonstrativos já existentes, sem modificar tabelas, colunas ou relacionamentos. A V49 também sincroniza um valor de documento armazenado no snapshot da ordem; a V50 atualiza documentos de usuários demonstrativos. Após reset do Learner Lab, reexecute as pipelines CI/CD para provisionar os recursos e executar as migrations Flyway da aplicação.
