@@ -11,11 +11,24 @@ Cadastre os mesmos nomes de Variables e Secrets nos dois Environments, com valor
 | `AWS_REGION` | Região do provider, backend e consultas AWS | Obrigatória; `us-east-1` nos dois Environments. |
 | `AWS_EXPECTED_ACCOUNT_ID` | Conta esperada para o guard e para a lista de contas permitidas do provider | Obrigatória; exatamente 12 dígitos. Deve corresponder à identidade STS das credenciais do mesmo Environment. Não fixar o valor no código ou documentação. |
 | `AWS_TERRAFORM_STATE_BUCKET` | Bucket do state RDS e do state remoto de VPC/EKS | Obrigatória; o owner do bucket precisa corresponder a `AWS_EXPECTED_ACCOUNT_ID`. |
-| `AWS_TF_STATE_KEY` | Key do state deste root RDS | Obrigatória; usar o prefixo do Environment e uma key exclusiva do root RDS. |
-| `AWS_INFRA_STATE_KEY` | Key do state VPC/EKS consumido pelo root RDS | Obrigatória; usar o mesmo prefixo de Environment e uma key distinta do state RDS. |
+| `AWS_TF_STATE_KEY` | Key do state deste root RDS | Obrigatória; usar a key autoritativa do root RDS para o ambiente. |
+| `AWS_INFRA_STATE_KEY` | Key do state VPC/EKS consumido pelo root RDS | Obrigatória; deve apontar ao state produzido pelo mesmo ambiente e ser diferente da key RDS. |
 | `TERRAFORM_APPLY_APPROVAL_CONFIGURED` | Gate adicional para Apply | Não definir como `true` até Required reviewers estarem configurados e confirmados no Environment. A variável não substitui a proteção do próprio Environment. |
 
-Use keys separadas por ambiente e por root, por exemplo `homolog/<root>/terraform.tfstate` e `production/<root>/terraform.tfstate`. No mesmo Environment, as keys de `AWS_TF_STATE_KEY` e `AWS_INFRA_STATE_KEY` não podem ser iguais. Se os ambientes estiverem na mesma conta, podem compartilhar bucket apenas com keys diferentes. Se estiverem em contas distintas, cada Environment deve apontar para bucket e States pertencentes à sua própria conta. O workflow valida o owner do bucket com `AWS_EXPECTED_ACCOUNT_ID` antes de inicializar o backend ou ler o State remoto.
+## Keys autoritativas e isolamento
+
+| Environment | `AWS_TF_STATE_KEY` (RDS) | `AWS_INFRA_STATE_KEY` (VPC/EKS) |
+|---|---|---|
+| `homolog` | `rds/terraform.tfstate` | `eks/terraform.tfstate` |
+| `production` | `production/rds/terraform.tfstate` | Key sob `production/`, igual à key configurada no root produtor `autoflow-infra`. |
+
+Para `homolog`, as keys preservam os valores atuais das GitHub Repository Variables, conferidos nesta auditoria, e correspondem às referências de backend/remote state nos workflows e Terraform de `autoflow-infra`, `autoflow-db`, `autoflow-lambda` e `autoflow`. O runbook `autoflow-infra/docs/disaster-recovery-bootstrap.md` registra um inventário AWS read-only de 15/10/2026 em que os objetos `eks/terraform.tfstate` e `rds/terraform.tfstate` estavam presentes; nenhum State foi baixado. Não havia identidade AWS válida nesta auditoria para confirmar novamente bucket, conta ou presença atual dos objetos.
+
+A consulta read-only à API do GitHub encontrou as keys de State como Repository Variables, mas não encontrou `AWS_TF_STATE_KEY`/`AWS_INFRA_STATE_KEY` cadastradas nos Environments `homolog` e `production` de `autoflow-db`. Nenhuma configuração GitHub foi alterada. O preflight atual exige que essas Variables existam no Environment selecionado e bloqueia acesso AWS até que sejam cadastradas ali.
+
+As keys `production/` são a convenção planejada para os roots dedicados. A key RDS de produção é `production/rds/terraform.tfstate`; a key exata do State produtor VPC/EKS continua pendente: o PR aberto de `autoflow-infra` documenta `production/infra/terraform.tfstate`, enquanto o PR aberto de `autoflow-lambda` cita `production/eks/terraform.tfstate`. Nenhuma dessas keys foi confirmada como objeto existente no S3 nem configurada no GitHub Environment. Antes de cadastrar `AWS_INFRA_STATE_KEY` em production, alinhe-o ao `AWS_TF_STATE_KEY_INFRA` do Environment production em `autoflow-infra` e ao `AWS_INFRA_STATE_KEY` de `autoflow-lambda`; a key homolog antiga não deve ser migrada automaticamente. O workflow rejeita keys de outro ambiente, keys duplicadas e a key RDS incompatível antes de configurar credenciais AWS; para a key infra de produção, valida o prefixo `production/`, enquanto a igualdade exata com o State produtor permanece uma pendência externa e bloqueante.
+
+No mesmo bucket, os dois ambientes usam keys distintas; em contas diferentes, cada Environment deve apontar para bucket/States da própria conta. O workflow valida o owner do bucket com `AWS_EXPECTED_ACCOUNT_ID` antes de inicializar o backend ou ler o State remoto. Cadastre os valores acima como Environment Variables; as Repository Variables observadas não substituem variáveis ausentes no Environment.
 
 Não altere keys existentes para apontar a um State vazio sem reconciliação e autorização próprias. O root continua consumindo `AWS_INFRA_STATE_KEY` do mesmo bucket e da mesma conta configurados no Environment selecionado; nenhum State de homologação é usado pela produção.
 
@@ -33,10 +46,10 @@ Não reutilize credenciais AWS ou credenciais do banco entre ambientes sem decis
 
 ## Seleção de ambiente e nomes de recursos
 
-| Branch | GitHub Environment | `project_name` | Prefixo exigido nas keys |
+| Branch | GitHub Environment | `project_name` | Keys |
 |---|---|---|---|
-| `develop` | `homolog` | `autoflow` | `homolog/` |
-| `main` | `production` | `autoflow-production` | `production/` |
+| `develop` | `homolog` | `autoflow` | Keys existentes de homologação listadas acima. |
+| `main` | `production` | `autoflow-production` | RDS sob `production/`; a key VPC/EKS deve coincidir com o produtor. |
 
 `project_name` já existe em `infra/vars.tf`; o workflow define seu valor por branch sem criar variável Terraform redundante. Ele compõe os nomes do RDS, DB Subnet Group, snapshot final e Security Groups. O nome `autoflow` mantém os nomes atuais de homologação; o prefixo `autoflow-production` evita colisão quando os ambientes compartilham uma conta.
 
@@ -67,4 +80,4 @@ Em cada execução autorizada, o Plan valida configuração, conta, bucket e Sta
 
 Para validação exclusivamente local, `terraform init -backend=false` e `terraform validate` não acessam AWS nem backend remoto. Não execute `terraform plan`, `apply` ou `destroy` como parte da validação local desta alteração.
 
-**Fontes:** `.github/workflows/pipeline.yml`, `infra/vars.tf`, `infra/backend.tf`, `infra/rds-postgresql.tf`, `infra/sg.tf`, `scripts/verify_aws_account.py`, `scripts/state_resource_guard.py` e `scripts/review_rds_plan.py`.
+**Fontes:** `.github/workflows/pipeline.yml`, `infra/vars.tf`, `infra/backend.tf`, `infra/rds-postgresql.tf`, `infra/sg.tf`, `scripts/state_key_policy.py`, `scripts/verify_aws_account.py`, `scripts/state_resource_guard.py` e `scripts/review_rds_plan.py`.

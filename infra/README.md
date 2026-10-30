@@ -8,7 +8,9 @@ O ingresso TCP 5432 é limitado ao `clusterSecurityGroupId` obtido por `data.aws
 
 ## State e inicialização
 
-O backend S3 não fixa bucket, chave ou região. Inicialize com os parâmetros aprovados externamente, incluindo `key=rds/terraform.tfstate`, região `us-east-1`, criptografia e locking conforme suporte do bucket. `TF_VAR_terraform_state_bucket` é obrigatório e deve apontar ao bucket externo correto; `TF_VAR_infra_state_key` assume `eks/terraform.tfstate`. Não versionar configurações locais com identificadores de ambiente.
+O backend S3 não fixa bucket, chave ou região. Em `homolog`, preserve `rds/terraform.tfstate` para este root e `eks/terraform.tfstate` para o root VPC/EKS consumido. Em `production`, use `production/rds/terraform.tfstate` para este root; `AWS_INFRA_STATE_KEY` deve usar o prefixo `production/` e coincidir exatamente com `AWS_TF_STATE_KEY_INFRA` do Environment production do repositório produtor `autoflow-infra`. O sufixo dessa key ainda precisa ser reconciliado entre os repositórios antes de cadastrar o Environment. Não versionar IDs de conta ou configurações locais.
+
+As keys de homologação correspondem às Repository Variables atualmente configuradas e ao mapeamento usado pelos workflows dos produtores/consumidores. Um runbook do repositório de infraestrutura registra os objetos como presentes em um inventário AWS read-only de 15/10/2026; a presença atual não foi confirmada nesta auditoria. As keys de produção são somente destinos planejados, cuja existência não foi verificada. Não inicializar States vazios, copiar ou migrar State automaticamente; reconciliar conta, bucket, owner, lineage e objeto antes de qualquer deploy.
 
 O nome do cluster é lido do output `eks_cluster_name` no state da infraestrutura. A autenticação do provider usa a configuração de credenciais AWS do processo e `aws_allowed_account_ids`, sem provisionamento de IAM. Execute/aplique primeiro a infraestrutura com esse output publicado.
 

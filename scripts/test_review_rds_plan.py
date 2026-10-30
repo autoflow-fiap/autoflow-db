@@ -18,6 +18,8 @@ class ReviewRdsPlanTests(unittest.TestCase):
         rds = (self.root / "infra/rds-postgresql.tf").read_text(encoding="utf-8")
         variables = (self.root / "infra/vars.tf").read_text(encoding="utf-8")
         self.assertIn("data.terraform_remote_state.infra.outputs.eks_cluster_name", rds)
+        self.assertIn("bucket  = var.terraform_state_bucket", rds)
+        self.assertIn("key     = var.infra_state_key", rds)
         self.assertNotIn('variable "eks_cluster_name"', variables)
         self.assertNotIn('variable "lambda_security_group_id"', variables)
         self.assertNotIn('variable "role_arn"', variables)
@@ -71,13 +73,16 @@ class ReviewRdsPlanTests(unittest.TestCase):
                 self.assertIn("AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}", job)
                 self.assertIn("AWS_TF_STATE_KEY: ${{ vars.AWS_TF_STATE_KEY }}", job)
                 self.assertIn("TF_VAR_infra_state_key: ${{ vars.AWS_INFRA_STATE_KEY }}", job)
+                self.assertIn("python scripts/state_key_policy.py", job)
+                self.assertLess(
+                    job.index("python scripts/state_key_policy.py"),
+                    job.index("aws-actions/configure-aws-credentials@v4"),
+                )
                 self.assertIn("/environments/$DEPLOYMENT_ENV/variables", job)
                 self.assertIn("/environments/$DEPLOYMENT_ENV/secrets", job)
                 self.assertIn("for name in AWS_REGION AWS_EXPECTED_ACCOUNT_ID", job)
                 self.assertIn("for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN DATABASE_USERNAME DATABASE_PASSWORD", job)
                 self.assertIn('[[ "$AWS_EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]', job)
-                self.assertIn('"$DEPLOYMENT_ENV"/*', job)
-                self.assertIn('test "$TF_STATE_KEY" != "$TF_VAR_infra_state_key"', job)
                 self.assertIn("python scripts/verify_aws_account.py", job)
                 self.assertIn('--expected-bucket-owner "$AWS_EXPECTED_ACCOUNT_ID"', job)
                 self.assertIn('expected_bucket_owner=$AWS_EXPECTED_ACCOUNT_ID', job)
@@ -96,6 +101,16 @@ class ReviewRdsPlanTests(unittest.TestCase):
         self.assertNotIn("ALLOW_DESTRUCTIVE", self.workflow)
         self.assertIn("python ../scripts/review_rds_plan.py rds.tfplan", self.plan_job)
         self.assertIn("python ../scripts/review_rds_plan.py rds.tfplan", self.apply_job)
+
+    def test_develop_and_main_pushes_start_apply_only_after_plan_and_environment_gate(self):
+        self.assertIn("github.event_name == 'push'", self.plan_job)
+        self.assertIn("github.event_name == 'push'", self.apply_job)
+        self.assertIn("needs: plan", self.apply_job)
+        self.assertIn("environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}", self.apply_job)
+        self.assertLess(
+            self.apply_job.index("Exigir approvals efetivos no Environment selecionado"),
+            self.apply_job.index("aws-actions/configure-aws-credentials@v4"),
+        )
 
     def test_apply_requires_effective_approvals_before_aws_credentials(self):
         approval_gate = self.apply_job.index("Exigir approvals efetivos no Environment selecionado")
