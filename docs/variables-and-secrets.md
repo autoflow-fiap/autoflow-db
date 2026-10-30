@@ -61,7 +61,7 @@ O backend S3 não fixa bucket, key ou região no código. O workflow inicializa 
 
 ## CI, Plan e Apply
 
-O CI executa testes Python, `terraform fmt -check -recursive`, `terraform init -backend=false` e `terraform validate` sem credenciais AWS. O Plan e o Apply são habilitados somente por push ou `workflow_dispatch` nas branches `develop` e `main`. A mera execução em Pull Request ou em branch de feature não pode acessar AWS.
+O CI executa testes Python, `terraform fmt -check -recursive`, `terraform init -backend=false` e `terraform validate` sem credenciais AWS. O Plan e o Apply são habilitados somente por push ou `workflow_dispatch` nas branches `develop` e `main`. Em produção, ambos também exigem `github.ref_protected=true`; com `main` desprotegida, os dois jobs são ignorados. A mera execução em Pull Request ou em branch de feature não pode acessar AWS.
 
 Em cada execução autorizada, o Plan valida configuração, conta, bucket e State remoto, impede a inicialização de State vazio quando detecta recursos já existentes sem State e gera um artefato de plano confidencial. O Apply fica associado ao mesmo GitHub Environment, revalida os Required reviewers e a política que permite exclusivamente `develop` em `homolog` ou `main` em `production`, a conta via STS, owner/key do bucket e o fingerprint de Environment, conta, bucket, keys, região e `project_name`. O hash do arquivo também é conferido, e o Apply consome exatamente o plano produzido na execução. A política `scripts/review_rds_plan.py` bloqueia qualquer ação `delete`, inclusive substituições, sem opção de bypass.
 

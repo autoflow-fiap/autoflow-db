@@ -61,7 +61,7 @@ class ReviewRdsPlanTests(unittest.TestCase):
         self.assertTrue(set(names["autoflow"].values()).isdisjoint(names["autoflow-production"].values()))
 
     def test_plan_and_apply_use_environment_scoped_aws_credentials_and_states(self):
-        condition = "(github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')"
+        condition = "(github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref != 'refs/heads/main' || github.ref_protected)"
         for job in (self.plan_job, self.apply_job):
             with self.subTest(job="plan" if job is self.plan_job else "apply"):
                 self.assertIn(condition, job)
@@ -90,7 +90,7 @@ class ReviewRdsPlanTests(unittest.TestCase):
         validate_job = self.workflow.split("\n  plan:\n", 1)[0]
         self.assertNotIn("configure-aws-credentials", validate_job)
         self.assertNotIn("AWS_ACCESS_KEY_ID", validate_job)
-        condition = "(github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')"
+        condition = "(github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref != 'refs/heads/main' || github.ref_protected)"
         self.assertIn(condition, self.plan_job)
         self.assertIn(condition, self.apply_job)
         self.assertNotIn("ALLOW_DESTRUCTIVE", self.workflow)
@@ -110,6 +110,8 @@ class ReviewRdsPlanTests(unittest.TestCase):
         self.assertIn("deployment-branch-policies", self.apply_job)
         self.assertIn("EXPECTED_BRANCH=develop", self.apply_job)
         self.assertIn("EXPECTED_BRANCH=main", self.apply_job)
+        self.assertIn("github.ref_protected", self.plan_job)
+        self.assertIn("github.ref_protected", self.apply_job)
 
     def test_rds_is_private_encrypted_and_protected_with_final_snapshot(self):
         rds = (self.root / "infra/rds-postgresql.tf").read_text(encoding="utf-8")
