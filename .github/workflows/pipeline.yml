@@ -103,7 +103,7 @@ jobs:
           python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws ec2 describe-security-groups --region "$AWS_REGION" --filters Name=group-name,Values=autoflow-rds-sg --query 'SecurityGroups[0].GroupId' --output text
           python scripts/state_resource_guard.py --bucket "$AWS_TERRAFORM_STATE_BUCKET" --key "$AWS_TF_STATE_KEY" -- aws ec2 describe-security-groups --region "$AWS_REGION" --filters Name=group-name,Values=autoflow-lambda-sg --query 'SecurityGroups[0].GroupId' --output text
           cd infra
-          terraform init -input=false -reconfigure -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_REGION" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+          terraform init -input=false -reconfigure -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_REGION" -backend-config="allowed_account_ids=$TF_VAR_aws_allowed_account_ids" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
       - name: Terraform validate
         working-directory: infra
         run: terraform validate
@@ -210,7 +210,7 @@ jobs:
         run: sha256sum --check rds.tfplan.sha256
       - name: Inicializar state remoto existente
         working-directory: infra
-        run: terraform init -input=false -reconfigure -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_REGION" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+        run: terraform init -input=false -reconfigure -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_REGION" -backend-config="allowed_account_ids=$TF_VAR_aws_allowed_account_ids" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
       - name: Revalidar bloqueio de ações destrutivas
         working-directory: infra
         run: python ../scripts/review_rds_plan.py rds.tfplan

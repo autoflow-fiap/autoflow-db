@@ -17,7 +17,7 @@ Inventário observado nos workflows e Terraform. PRs e pushes em `main` executam
 | Nome | Finalidade | Onde; origem | CI / CD | Exemplo seguro | Consumidor; default/ausência |
 |---|---|---|---|---|---|
 | `AWS_REGION` | Região AWS explícita | Repositório para Plan; Environment `homolog` para Apply | CD | `us-east-1` | Workflow/provider/backend; obrigatória, sem default. |
-| `AWS_EXPECTED_ACCOUNT_ID` | Conta AWS validada pelo guard | Repositório para Plan; Environment `homolog` para Apply | CD | Não aplicável | Workflow/scripts; obrigatória, sem default. Não fixar account ID no código. |
+| `AWS_EXPECTED_ACCOUNT_ID` | Conta AWS validada pelo guard | Repositório para Plan; Environment `homolog` para Apply | CD | Não aplicável | Workflow/scripts; obrigatória, sem default. Deriva a allowlist do backend S3 e do state remoto; não fixar account ID no código. |
 | `AWS_TERRAFORM_STATE_BUCKET` | Bucket S3 preexistente | Repositório para Plan; Environment `homolog` para Apply | CD | Não aplicável | Workflow/backend/input; obrigatória, sem default. |
 | `AWS_TF_STATE_KEY` | Key state RDS | Repositório para Plan; Environment `homolog` para Apply | CD | `rds/terraform.tfstate` | Workflow/backend; obrigatória, sem default. |
 | `AWS_INFRA_STATE_KEY` | Key state VPC/EKS consumida pelo RDS | Repositório para Plan; Environment `homolog` para Apply | CD | `eks/terraform.tfstate` | Workflow/state remoto; obrigatória, sem default. |
@@ -25,7 +25,7 @@ Inventário observado nos workflows e Terraform. PRs e pushes em `main` executam
 
 ## Terraform inputs — `infra/vars.tf`
 
-`TF_VAR_*` pode vir do workflow, shell local ou mecanismo seguro. Backend S3 também recebe `-backend-config` explicitamente no workflow.
+`TF_VAR_*` pode vir do workflow, shell local ou mecanismo seguro. Backend S3 também recebe `-backend-config` explicitamente no workflow, incluindo `allowed_account_ids` derivada da configuração externa.
 
 | Input | Tipo / finalidade | Obrigatoriedade / default | Origem/consumidor |
 |---|---|---|---|

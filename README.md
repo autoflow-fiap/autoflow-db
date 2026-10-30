@@ -56,7 +56,7 @@ A configuração Terraform final define acesso privado, storage criptografado, s
 
 O root declara backend S3 por meio de `infra/backend.tf` e consome o state da infraestrutura em `infra/rds-postgresql.tf`. Antes de qualquer inicialização ou plano remoto, confirme bucket, key, responsabilidade e state autoritativo com os responsáveis. Não inicialize um state vazio sobre recursos que possam existir.
 
-O bucket/key do backend são parâmetros externos, não arquivos de exemplo versionados. Para uso local, configure `AWS_PROFILE`, `AWS_REGION`, `AWS_EXPECTED_ACCOUNT_ID`, `TF_VAR_aws_profile`, `TF_VAR_aws_allowed_account_ids` (JSON de uma lista), `TF_VAR_terraform_state_bucket`, `TF_VAR_infra_state_key` e os inputs de banco por variáveis de ambiente locais ou por mecanismo seguro. Valide a identidade com `scripts/verify_aws_account.py` antes de acessar AWS. O `terraform init` recebe `-backend-config` para bucket, key, região, `encrypt=true` e `use_lockfile=true`.
+O bucket/key do backend são parâmetros externos, não arquivos de exemplo versionados. Para uso local, configure `AWS_PROFILE`, `AWS_REGION`, `AWS_EXPECTED_ACCOUNT_ID`, `TF_VAR_aws_profile`, `TF_VAR_aws_allowed_account_ids` (JSON de uma lista), `TF_VAR_terraform_state_bucket`, `TF_VAR_infra_state_key` e os inputs de banco por variáveis de ambiente locais ou por mecanismo seguro. Valide a identidade com `scripts/verify_aws_account.py` antes de acessar AWS. A mesma allowlist externa restringe o provider, o backend S3 e o `terraform_remote_state` de VPC/EKS. O backend usa `encrypt=true` e `use_lockfile=true`.
 
 O AWS Academy Learner Lab pode restringir políticas, boundaries, SCPs, contexto de `iam:PassRole`, quotas e duração da sessão. A saída `allowed`/`implicitDeny` de `simulate-principal-policy` é apenas uma simulação e **não garante autorização efetiva**. Inventários também se limitam à conta, região e permissões consultadas. Após reset do Learner Lab, reexecute as pipelines CI/CD dos repositórios na ordem de dependências para provisionar novamente o ambiente.
 
@@ -68,9 +68,22 @@ Os comandos abaixo são referências de fluxo. Execute-os somente com state, con
 terraform init -backend=false -input=false
 terraform fmt -check -recursive
 terraform validate
+python -m unittest discover -s scripts -p 'test_terraform_backend_config.py' -v
 ```
 
-Para usar backend remoto, somente após reconciliar state, passe os parâmetros aprovados em `terraform init -reconfigure -backend-config=...`. `plan`/`apply` não fazem parte da validação estática; `apply` altera recursos AWS e exige autorização explícita e revisão do plano. A configuração atual ativa proteção contra remoção e exige snapshot final; operações destrutivas continuam sujeitas a plano de recuperação aprovado.
+Para usar backend remoto, somente após reconciliar state e validar a conta com STS, passe os parâmetros aprovados em `terraform init -reconfigure`. Exemplo usando somente valores externos:
+
+```bash
+terraform -chdir=infra init -input=false -reconfigure \
+  -backend-config="bucket=$TF_STATE_BUCKET" \
+  -backend-config="key=$TF_STATE_KEY" \
+  -backend-config="region=$AWS_REGION" \
+  -backend-config="allowed_account_ids=$TF_VAR_aws_allowed_account_ids" \
+  -backend-config="encrypt=true" \
+  -backend-config="use_lockfile=true"
+```
+
+`plan`/`apply` não fazem parte da validação estática; `apply` altera recursos AWS e exige autorização explícita e revisão do plano. A configuração atual ativa proteção contra remoção e exige snapshot final; operações destrutivas continuam sujeitas a plano de recuperação aprovado.
 
 ## CI/CD
 
