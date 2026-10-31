@@ -105,21 +105,30 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
       - name: Exigir configurações no GitHub Environment selecionado
         env:
-          GH_TOKEN: ${{ github.token }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}
+          AWS_TERRAFORM_STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
+          AWS_TF_STATE_KEY: ${{ vars.AWS_TF_STATE_KEY }}
+          AWS_INFRA_STATE_KEY: ${{ vars.AWS_INFRA_STATE_KEY }}
+          TERRAFORM_APPLY_APPROVAL_CONFIGURED: ${{ vars.TERRAFORM_APPLY_APPROVAL_CONFIGURED }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          DATABASE_USERNAME: ${{ secrets.DATABASE_USERNAME }}
+          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+          TF_PLAN_ENCRYPTION_KEY: ${{ secrets.TF_PLAN_ENCRYPTION_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          VARIABLE_NAMES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments/$DEPLOYMENT_ENV/variables?per_page=30" --jq '.variables[].name')
-          SECRET_NAMES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments/$DEPLOYMENT_ENV/secrets?per_page=100" --jq '.secrets[].name')
           for name in AWS_REGION AWS_EXPECTED_ACCOUNT_ID AWS_TERRAFORM_STATE_BUCKET AWS_TF_STATE_KEY AWS_INFRA_STATE_KEY TERRAFORM_APPLY_APPROVAL_CONFIGURED; do
-            if ! grep -Fxq -- "$name" <<< "$VARIABLE_NAMES"; then
-              echo "A Variable $name precisa estar cadastrada no GitHub Environment selecionado." >&2
+            if [[ -z "${!name}" ]]; then
+              echo "A Variable $name precisa ter valor no GitHub Environment selecionado." >&2
               exit 1
             fi
           done
           for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN DATABASE_USERNAME DATABASE_PASSWORD TF_PLAN_ENCRYPTION_KEY; do
-            if ! grep -Fxq -- "$name" <<< "$SECRET_NAMES"; then
-              echo "O Secret $name precisa estar cadastrado no GitHub Environment selecionado." >&2
+            if [[ -z "${!name}" ]]; then
+              echo "O Secret $name precisa ter valor no GitHub Environment selecionado." >&2
               exit 1
             fi
           done
@@ -239,21 +248,30 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
       - name: Exigir configurações no GitHub Environment selecionado
         env:
-          GH_TOKEN: ${{ github.token }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}
+          AWS_TERRAFORM_STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
+          AWS_TF_STATE_KEY: ${{ vars.AWS_TF_STATE_KEY }}
+          AWS_INFRA_STATE_KEY: ${{ vars.AWS_INFRA_STATE_KEY }}
+          TERRAFORM_APPLY_APPROVAL_CONFIGURED: ${{ vars.TERRAFORM_APPLY_APPROVAL_CONFIGURED }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          DATABASE_USERNAME: ${{ secrets.DATABASE_USERNAME }}
+          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+          TF_PLAN_ENCRYPTION_KEY: ${{ secrets.TF_PLAN_ENCRYPTION_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          VARIABLE_NAMES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments/$DEPLOYMENT_ENV/variables?per_page=30" --jq '.variables[].name')
-          SECRET_NAMES=$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments/$DEPLOYMENT_ENV/secrets?per_page=100" --jq '.secrets[].name')
           for name in AWS_REGION AWS_EXPECTED_ACCOUNT_ID AWS_TERRAFORM_STATE_BUCKET AWS_TF_STATE_KEY AWS_INFRA_STATE_KEY TERRAFORM_APPLY_APPROVAL_CONFIGURED; do
-            if ! grep -Fxq -- "$name" <<< "$VARIABLE_NAMES"; then
-              echo "A Variable $name precisa estar cadastrada no GitHub Environment selecionado." >&2
+            if [[ -z "${!name}" ]]; then
+              echo "A Variable $name precisa ter valor no GitHub Environment selecionado." >&2
               exit 1
             fi
           done
           for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN DATABASE_USERNAME DATABASE_PASSWORD TF_PLAN_ENCRYPTION_KEY; do
-            if ! grep -Fxq -- "$name" <<< "$SECRET_NAMES"; then
-              echo "O Secret $name precisa estar cadastrado no GitHub Environment selecionado." >&2
+            if [[ -z "${!name}" ]]; then
+              echo "O Secret $name precisa ter valor no GitHub Environment selecionado." >&2
               exit 1
             fi
           done

@@ -2,7 +2,7 @@
 
 O workflow usa dois GitHub Environments: `homolog`, selecionado exclusivamente por `develop`, e `production`, selecionado exclusivamente por `main`. Plan e Apply são vinculados ao Environment selecionado antes de carregar suas configurações AWS. Pull Requests e pushes em branches de feature executam apenas CI, sem credenciais AWS, Plan ou Apply.
 
-Cadastre os mesmos nomes de Variables e Secrets nos dois Environments, com valores independentes. Restrinja `homolog` somente a `develop` e `production` somente a `main`, configure Required reviewers para os Applies e mantenha `TERRAFORM_APPLY_APPROVAL_CONFIGURED` sem o valor `true` até confirmar que os gates estão efetivamente configurados. O workflow consulta Required reviewers e a política de branches da API do GitHub antes de permitir Apply; ausência, erro ou branch extra bloqueiam a operação.
+Cadastre os mesmos nomes de Variables e Secrets nos dois Environments, com valores independentes. Restrinja `homolog` somente a `develop` e `production` somente a `main`, configure Required reviewers para os Applies e mantenha `TERRAFORM_APPLY_APPROVAL_CONFIGURED` sem o valor `true` até confirmar que os gates estão efetivamente configurados. O GitHub aplica as proteções nativas do Environment ao iniciar os jobs; o workflow também consulta Required reviewers e a política de branches antes de permitir Apply.
 
 ## Variables do GitHub Environment
 
@@ -22,7 +22,7 @@ Cadastre os mesmos nomes de Variables e Secrets nos dois Environments, com valor
 | `homolog` | Prefixo obrigatório `homolog/`; sufixos fornecidos externamente | A key VPC/EKS precisa corresponder ao Environment `homolog` do produtor. |
 | `production` | Prefixo obrigatório `production/`; sufixos fornecidos externamente | A key VPC/EKS precisa corresponder ao Environment `production` do produtor. |
 
-As duas keys devem ser distintas, conter segmentos de caminho válidos e referir-se ao Environment selecionado. O workflow exige nomes de Variables no GitHub Environment e não aceita fallback de Repository Variables ou Organization Variables. Nenhuma key final é definida na documentação ou no código. A igualdade de todas as seis keys e a correspondência global de conta, bucket e região são verificadas pelo teste integrado em `autoflow-infra/scripts/terraform_state_contract.py`; consulte a documentação desse repositório para executar a verificação com valores externos.
+As duas keys devem ser distintas, conter segmentos de caminho válidos e referir-se ao Environment selecionado. O workflow valida que os valores resolvidos por `vars.*` e `secrets.*` não estão vazios; não consulta a API para determinar o escopo de origem desses valores. Configure valores independentes em cada GitHub Environment e não use Repository Variables, Organization Variables ou Secrets como fallback. Nenhuma key final é definida na documentação ou no código. A igualdade de todas as seis keys e a correspondência global de conta, bucket e região são verificadas pelo teste integrado em `autoflow-infra/scripts/terraform_state_contract.py`; consulte a documentação desse repositório para executar a verificação com valores externos.
 
 Não altere keys existentes para apontar a um State vazio sem reconciliação e autorização próprias. A presença dos objetos, bucket, owner, lineage e identidade dos recursos não foi verificada nesta alteração. Nenhum State foi inicializado, copiado ou migrado.
 
@@ -37,7 +37,7 @@ Não altere keys existentes para apontar a um State vazio sem reconciliação e 
 | `DATABASE_PASSWORD` | Senha configurada no RDS | Obrigatório; valor próprio do banco/ambiente e sensível no Terraform. |
 | `TF_PLAN_ENCRYPTION_KEY` | Chave de criptografia do artifact Terraform Plan | Obrigatória no Environment; usada somente pelos jobs Plan/Apply, não versionada nem impressa nos logs. |
 
-Não reutilize credenciais AWS ou credenciais do banco entre ambientes sem decisão operacional explícita. Os três Secrets AWS devem ser renovados juntos quando a sessão temporária expirar. Antes de configurar acesso AWS, o workflow consulta a API do GitHub e exige que os nomes de Variables e Secrets obrigatórios estejam cadastrados no Environment selecionado. Assim, valores apenas no nível de repositório ou organização não substituem configuração ausente no Environment; o workflow falha fechado sem usar essas credenciais.
+Não reutilize credenciais AWS ou credenciais do banco entre ambientes sem decisão operacional explícita. Os três Secrets AWS devem ser renovados juntos quando a sessão temporária expirar. Antes de configurar acesso AWS, o workflow verifica diretamente se os valores obrigatórios de Variables e Secrets resolvidos no job estão presentes. Os conteúdos sensíveis não são impressos nos logs; ausência de valor interrompe a execução antes do acesso AWS.
 
 ## Seleção de ambiente e nomes de recursos
 
@@ -71,7 +71,7 @@ O backend S3 não fixa bucket, key ou região no código. O workflow deriva `all
 
 O CI executa testes Python, `terraform fmt -check -recursive`, `terraform init -backend=false` e `terraform validate` sem credenciais AWS. O Plan e o Apply são habilitados somente por push ou `workflow_dispatch` nas branches `develop` e `main`. Em produção, ambos também exigem `github.ref_protected=true`; com `main` desprotegida, os dois jobs são ignorados. A mera execução em Pull Request ou em branch de feature não pode acessar AWS.
 
-Em cada execução autorizada, o Plan valida configuração, conta, bucket e State remoto, impede a inicialização de State vazio quando detecta recursos já existentes sem State e gera um artefato de plano confidencial. O Apply fica associado ao mesmo GitHub Environment, revalida os Required reviewers e a política que permite exclusivamente `develop` em `homolog` ou `main` em `production`, a conta via STS, owner/key do bucket e o fingerprint de Environment, conta, bucket, keys, região e `project_name`. O hash do arquivo também é conferido, e o Apply consome exatamente o plano produzido na execução. A política `scripts/review_rds_plan.py` bloqueia qualquer ação `delete`, inclusive substituições, sem opção de bypass.
+Em cada execução autorizada, o Plan valida configuração, conta, bucket e State remoto, impede a inicialização de State vazio quando detecta recursos já existentes sem State e gera um artefato de plano confidencial. O Apply fica associado ao mesmo GitHub Environment, consulta os Required reviewers e a política que permite exclusivamente `develop` em `homolog` ou `main` em `production`, revalida a conta via STS, owner/key do bucket e o fingerprint de Environment, conta, bucket, keys, região e `project_name`. O hash do arquivo também é conferido, e o Apply consome exatamente o plano produzido na execução. A política `scripts/review_rds_plan.py` bloqueia qualquer ação `delete`, inclusive substituições, sem opção de bypass.
 
 Para validação exclusivamente local, `terraform init -backend=false` e `terraform validate` não acessam AWS nem backend remoto. Não execute `terraform plan`, `apply` ou `destroy` como parte da validação local desta alteração.
 
