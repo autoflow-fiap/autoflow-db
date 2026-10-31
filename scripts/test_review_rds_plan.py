@@ -66,7 +66,7 @@ class ReviewRdsPlanTests(unittest.TestCase):
 
     def test_plan_and_apply_use_environment_scoped_aws_credentials_and_states(self):
         conditions = {
-            "plan": "(github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && github.event_name == 'workflow_dispatch' && (github.ref != 'refs/heads/main' || github.ref_protected)",
+            "plan": "(github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.gate.outputs.auto_cd_enabled == 'true'))",
             "apply": "(github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && github.event_name == 'workflow_dispatch' && inputs.apply == true && (github.ref != 'refs/heads/main' || github.ref_protected)",
         }
         for name, job in (("plan", self.plan_job), ("apply", self.apply_job)):
@@ -98,7 +98,7 @@ class ReviewRdsPlanTests(unittest.TestCase):
         ci = (self.root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         self.assertIn("branches: [develop, main, 'feature/**']", ci)
         self.assertIn("pull_request:", ci)
-        self.assertNotIn("  push:", self.workflow.split("permissions:", 1)[0])
+        self.assertIn("  push:\n    branches: [develop, main]", self.workflow.split("permissions:", 1)[0])
         self.assertNotIn("  pull_request:", self.workflow.split("permissions:", 1)[0])
         validate_job = self.workflow.split("\n  plan:\n", 1)[0]
         self.assertNotIn("configure-aws-credentials", validate_job)
@@ -112,8 +112,9 @@ class ReviewRdsPlanTests(unittest.TestCase):
     def test_manual_apply_requires_explicit_input_after_plan_and_environment_gate(self):
         self.assertIn("github.event_name == 'workflow_dispatch'", self.plan_job)
         self.assertIn("github.event_name == 'workflow_dispatch' && inputs.apply == true", self.apply_job)
-        self.assertNotIn("github.event_name == 'push'", self.plan_job + self.apply_job)
-        self.assertIn("needs: plan", self.apply_job)
+        self.assertIn("needs.gate.outputs.auto_cd_enabled == 'true'", self.plan_job)
+        self.assertNotIn("github.event_name == 'push'", self.apply_job)
+        self.assertIn("needs: [gate, plan]", self.apply_job)
         self.assertIn("environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}", self.apply_job)
         self.assertLess(
             self.apply_job.index("Exigir approvals efetivos no Environment selecionado"),
