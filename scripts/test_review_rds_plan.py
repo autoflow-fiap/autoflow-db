@@ -83,10 +83,13 @@ class ReviewRdsPlanTests(unittest.TestCase):
                     job.index("python scripts/state_key_policy.py"),
                     job.index("aws-actions/configure-aws-credentials@v4"),
                 )
-                self.assertIn("/environments/$DEPLOYMENT_ENV/variables", job)
-                self.assertIn("/environments/$DEPLOYMENT_ENV/secrets", job)
+                self.assertNotIn("/environments/$DEPLOYMENT_ENV/variables", job)
+                self.assertNotIn("/environments/$DEPLOYMENT_ENV/secrets", job)
+                self.assertIn("AWS_REGION: ${{ vars.AWS_REGION }}", job)
+                self.assertIn("TF_PLAN_ENCRYPTION_KEY: ${{ secrets.TF_PLAN_ENCRYPTION_KEY }}", job)
                 self.assertIn("for name in AWS_REGION AWS_EXPECTED_ACCOUNT_ID", job)
                 self.assertIn("for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN DATABASE_USERNAME DATABASE_PASSWORD", job)
+                self.assertIn('if [[ -z "${!name}" ]]; then', job)
                 self.assertIn('[[ "$AWS_EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]', job)
                 self.assertIn("python scripts/verify_aws_account.py", job)
                 self.assertIn('--expected-bucket-owner "$AWS_EXPECTED_ACCOUNT_ID"', job)
