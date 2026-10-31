@@ -17,12 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Testes de segurança e matriz dos workflows
-        run: python -m unittest discover -s scripts -p 'test_*.py' -v
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.16.5"
           terraform_wrapper: false
+      - name: Testes de segurança e matriz dos workflows
+        run: python -m unittest discover -s scripts -p 'test_*.py' -v
       - name: Terraform fmt
         run: terraform fmt -check -recursive infra
       - name: Terraform init sem backend
