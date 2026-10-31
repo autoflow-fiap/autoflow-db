@@ -1,98 +1,62 @@
-# AutoFlow — Infraestrutura do RDS
+# AutoFlow — banco de dados gerenciado
 
-Este repositório contém a configuração Terraform final para provisionar o PostgreSQL gerenciado do AutoFlow na AWS. Após reset do Learner Lab, reexecute as pipelines CI/CD correspondentes para provisionar novamente os recursos.
+Este repositório provisiona o Amazon RDS PostgreSQL e as regras de rede do banco. O schema e suas migrations Flyway são
+mantidos pelo backend em [`autoflow`](https://github.com/autoflow-fiap/autoflow).
 
-## Responsabilidade e dependências
+## Arquitetura
 
-O root `infra/` declara uma instância Amazon RDS PostgreSQL 17, subnet group e Security Groups. Ele consome saídas do state Terraform da infraestrutura compartilhada, mantida em `autoflow-infra`. A aplicação Spring Boot e a Lambda usam o banco conforme suas configurações.
+O root `infra/` cria RDS PostgreSQL 17 privado, subnet group e Security Groups. Consome VPC e subnets do State de
+`autoflow-infra`; o backend Spring Boot e a Lambda de autenticação acessam o banco pela rede privada.
 
-```mermaid
-flowchart LR
-  Infra[autoflow-infra<br/>VPC e subnets] -->|state remoto| DB[autoflow-db<br/>RDS PostgreSQL]
-  App[autoflow<br/>API Spring Boot] -->|conexão PostgreSQL| DB
-  Lambda[autoflow-lambda<br/>função de autenticação] -->|conexão PostgreSQL| DB
-```
-
-O diagrama representa dependências declaradas, não conectividade ou implantação confirmada.
-
-## Esquema, migrations e seeds
-
-O modelo relacional implementado é versionado pelo Flyway na aplicação `autoflow`, em
-[`backend/src/main/resources/db/migration`](https://github.com/autoflow-fiap/autoflow/tree/develop/backend/src/main/resources/db/migration). As migrations
-definem usuários, clientes, veículos, ordens de serviço, serviços, peças/insumos e entidades relacionadas; constraints
-e evolução de schema devem ser lidas nas migrations. O backend executa Flyway conforme sua configuração. Este repositório
-provisiona RDS e não mantém uma cópia independente do schema.
-
-A migration V49 deste repositório está em [`migrations/V49__corrigir_documentos_seeds_demo.sql`](migrations/V49__corrigir_documentos_seeds_demo.sql).
-Há também uma migration V49 da aplicação em [`V49__corrigir_documentos_seeds_demo.sql`](https://github.com/autoflow-fiap/autoflow/blob/develop/backend/src/main/resources/db/migration/V49__corrigir_documentos_seeds_demo.sql),
-e a aplicação possui a V50 [`V50__corrigir_documentos_staff_demo.sql`](https://github.com/autoflow-fiap/autoflow/blob/develop/backend/src/main/resources/db/migration/V50__corrigir_documentos_staff_demo.sql),
-que corrige documentos sintéticos de usuários demonstrativos não-clientes. São repositórios/localizações distintos;
-`autoflow-db` não contém V50 em `migrations/`. Consulte
-[detalhes dos seeds](docs/seeds-demonstracao.md).
-
-## API e justificativa do banco
-
-O contrato central está no [guia OpenAPI da aplicação](https://github.com/autoflow-fiap/autoflow/blob/develop/docs/openapi/README.md) e na [coleção Postman de autenticação CPF/JWT](https://github.com/autoflow-fiap/autoflow/blob/develop/backend/postman/autoflow-serverless-auth.postman_collection.json); este repositório não duplica os contratos. A justificativa técnica da escolha do PostgreSQL e da persistência relacional está em [RFC-001](docs/RFC-001.md).
-
-## Configuração Terraform observada
-
-| Propriedade | Valor declarado |
+| Configuração declarada em Terraform | Valor |
 |---|---|
-| Engine e versão | PostgreSQL 17 |
-| Classe | `db.t3.micro` |
-| Armazenamento inicial | 20 GB |
-| Nome do banco | `autoflow_db` |
-| Porta | 5432 |
-| Subnets | IDs privados lidos do state de `autoflow-infra` |
-| Acesso público | `publicly_accessible = false` |
-| Criptografia do storage | `storage_encrypted = true` |
-| Snapshot final | Obrigatório (`skip_final_snapshot = false`) |
-| Proteção contra remoção | Ativada (`deletion_protection = true`) |
-| Enhanced Monitoring | Desativado (`monitoring_interval = 0`) |
+| Instância e armazenamento | `db.t3.micro`, 20 GB `gp3` |
+| Acesso público | Desativado |
+| Criptografia | Ativada |
+| Retenção de backup | 1 dia |
+| Snapshot final | Obrigatório |
+| Proteção contra remoção | Ativada |
+| Enhanced Monitoring | Desativado |
 
-O nome do RDS, DB Subnet Group, snapshot final e Security Groups deriva de `project_name`. A homologação usa `autoflow`; produção usa `autoflow-production`. Isso separa os recursos também quando os dois ambientes usam a mesma conta AWS. Após reset do Learner Lab, reexecute as pipelines CI/CD para provisionar novamente os recursos e dependências do banco.
+O modelo relacional está no [diagrama ER](docs/diagrama-er.md); a justificativa para PostgreSQL e a separação entre
+infraestrutura e schema estão em [RFC-001](docs/RFC-001.md). O contrato de API e autenticação está no
+[guia OpenAPI](https://github.com/autoflow-fiap/autoflow/blob/develop/docs/openapi/README.md) e na
+[coleção Postman](https://github.com/autoflow-fiap/autoflow/blob/develop/backend/postman/autoflow-serverless-auth.postman_collection.json).
 
-## Estado e pré-requisitos
+## Validar localmente
 
-O root declara backend S3 por meio de `infra/backend.tf` e consome o state da infraestrutura em `infra/rds-postgresql.tf`. Antes de qualquer inicialização ou plano remoto, confirme bucket, key, responsabilidade e state autoritativo com os responsáveis. Não inicialize um state vazio sobre recursos que possam existir.
-
-O bucket e as keys do backend são parâmetros externos, não arquivos de exemplo versionados. Para uso local, configure `AWS_PROFILE`, `AWS_REGION`, `AWS_EXPECTED_ACCOUNT_ID`, `TF_VAR_aws_profile`, `TF_VAR_aws_allowed_account_ids` (lista JSON derivada da conta esperada), `TF_VAR_project_name`, `TF_VAR_terraform_state_bucket`, `TF_VAR_infra_state_key` e os inputs de banco por variáveis de ambiente locais ou por mecanismo seguro. Valide a identidade com `scripts/verify_aws_account.py` antes de acessar AWS. O `terraform init` recebe `allowed_account_ids` junto com bucket, key, região, `encrypt=true` e `use_lockfile=true`; o mesmo allowlist restringe o `terraform_remote_state`. A verificação do owner continua nas chamadas AWS CLI compatíveis com `--expected-bucket-owner`, sem passar esse argumento ao Terraform.
-
-O AWS Academy Learner Lab pode restringir políticas, boundaries, SCPs, contexto de `iam:PassRole`, quotas e duração da sessão. A saída `allowed`/`implicitDeny` de `simulate-principal-policy` é apenas uma simulação e **não garante autorização efetiva**. Inventários também se limitam à conta, região e permissões consultadas. Após reset do Learner Lab, reexecute as pipelines CI/CD dos repositórios na ordem de dependências para provisionar novamente o ambiente.
-
-## Comandos Terraform
-
-Os comandos abaixo são referências de fluxo. Execute-os somente com state, conta, perfil AWS e autorização previamente confirmados:
+Com Terraform 1.16.5 e Python:
 
 ```bash
-terraform init -backend=false -input=false
-terraform fmt -check -recursive
-terraform validate
+terraform fmt -check -recursive infra
+terraform -chdir=infra init -backend=false -input=false
+terraform -chdir=infra validate
+python -m unittest discover -s scripts -p 'test_*.py' -v
 ```
 
-Para usar backend remoto, somente após reconciliar state, passe os parâmetros aprovados em `terraform init -reconfigure -backend-config=...`. `plan`/`apply` não fazem parte da validação estática; `apply` altera recursos AWS e exige autorização explícita e revisão do plano. A configuração atual ativa proteção contra remoção e exige snapshot final; operações destrutivas continuam sujeitas a plano de recuperação aprovado.
+Esses comandos não acessam a AWS. Um Plan remoto usa as credenciais e os Terraform States configurados para o ambiente;
+consulte [Variables e Secrets](docs/variables-and-secrets.md).
 
-## CI/CD
+## CI/CD e ambientes
 
-Consulte o [catálogo de variables e secrets](docs/variables-and-secrets.md) e o [histórico](docs/variables-changelog.md) para configurar GitHub Actions e inputs Terraform.
+- `ci.yml` executa testes e validação Terraform em Pull Requests para `develop`/`main` e em pushes para essas branches e
+  `feature/**`, sem credenciais AWS.
+- `pipeline.yml` recebe `push` e `workflow_dispatch` em `develop`/`main`. O gate valida a execução bem-sucedida da CI para
+  o mesmo repositório, branch e SHA. As Variables `AUTO_CD_ENABLED_HOMOLOG` e `AUTO_CD_ENABLED_PRODUCTION` habilitam o
+  Plan automático, respectivamente, em `develop`/`homolog` e `main`/`production`; o fluxo automático não executa Apply.
+- `workflow_dispatch` executa Plan por padrão. Apply exige `apply=true`, `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true` e a
+  aprovação do GitHub Environment. O workflow verifica Required reviewers e a política do Environment para limitar
+  `homolog` a `develop` e `production` a `main`; `main` também exige branch protegida.
+- O Plan é criptografado e vinculado à execução e ao commit. Apply valida sua integridade e reaplica o Plan produzido
+  naquele fluxo; o guard do RDS bloqueia exclusões e substituições.
 
-O workflow `.github/workflows/ci.yml` executa automaticamente os testes, guards e validações Terraform em Pull Requests para `develop`/`main` e pushes para `develop`, `main` e `feature/**`, sem credenciais ou operações AWS. O workflow `.github/workflows/pipeline.yml` é CD manual: `workflow_dispatch` em `develop` seleciona `homolog` e `project_name=autoflow`; em `main` seleciona `production` e `project_name=autoflow-production`. O Plan pode ser executado com `apply=false`; Apply não ocorre após o Plan sem autorização explícita `apply=true`. PRs, pushes e branches de feature não executam Plan ou Apply.
+Configure proteções de branch para exigir Pull Request e checks de CI. Os workflows dos quatro repositórios são
+independentes; a ordem de provisionamento e os gates estão descritos no [guia de CI/CD](docs/ci-cd-automatico.md) e no
+[runbook de implantação](https://github.com/autoflow-fiap/autoflow-infra/blob/develop/docs/api-gateway/runbook.md).
 
-Plan e Apply são jobs vinculados ao Environment escolhido pela branch; a aprovação nativa desse Environment protege os dois jobs separadamente. Antes de configurar credenciais, o workflow valida diretamente se os valores obrigatórios resolvidos por `vars.*` e `secrets.*` estão presentes, sem consultar APIs administrativas para listar Variables ou Secrets. Os conteúdos sensíveis não são impressos. Configure valores independentes em cada Environment. O workflow exige `AWS_EXPECTED_ACCOUNT_ID` com 12 dígitos e compara esse valor à identidade STS antes de consultar States ou inicializar o backend. Também valida que o owner do bucket corresponde à conta esperada.
+## Documentação relacionada
 
-As keys do root RDS e do State VPC/EKS consumido são fornecidas por Variables do GitHub Environment selecionado; o código não fixa sufixos nem escolhe State legado por default. As duas keys precisam começar pelo prefixo do Environment (`homolog/` ou `production/`), ser distintas e corresponder à key do root produtor VPC/EKS. `scripts/state_key_policy.py` falha fechado para Environment ou key ausente, prefixo incorreto, caminho inválido e keys iguais. As keys autoritativas e a presença dos objetos S3 não foram verificadas nesta alteração; nenhum State foi migrado ou inicializado.
-
-O Apply valida que há Required reviewers efetivos, que a política de branch do Environment permite somente a branch correspondente e que `TERRAFORM_APPLY_APPROVAL_CONFIGURED` está configurada como `true` antes de usar credenciais AWS. Configure os Environments e restrinja `homolog` à branch `develop` e `production` à `main`; mantenha `TERRAFORM_APPLY_APPROVAL_CONFIGURED` diferente de `true` até os gates estarem presentes. O Plan gera um artifact criptografado com AES-256 via OpenPGP e retenção de um dia; o Apply verifica integridade, run, commit, Environment, conta esperada, bucket, keys, região e projeto antes de descriptografar e aplicar exatamente o plano revisado. A aprovação do Plan não autoriza Apply: o dispatch exige `apply=true` e o job de Apply passa por revisão independente. A chave de criptografia é o Secret `TF_PLAN_ENCRYPTION_KEY` do Environment e não é versionada. O guard `scripts/review_rds_plan.py` continua bloqueando qualquer `delete` ou substituição de recurso.
-
-Para homologação e produção, cadastre os mesmos nomes de Variables e Secrets em cada GitHub Environment, com valores próprios para cada ambiente. As Variables necessárias são `AWS_REGION`, `AWS_EXPECTED_ACCOUNT_ID`, `AWS_TERRAFORM_STATE_BUCKET`, `AWS_TF_STATE_KEY`, `AWS_INFRA_STATE_KEY` e `TERRAFORM_APPLY_APPROVAL_CONFIGURED`. Os Secrets necessários são `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` e `TF_PLAN_ENCRYPTION_KEY`. O workflow valida os valores resolvidos nos contextos, mas não consulta o escopo de origem; configure-os separadamente em cada Environment. `AWS_REGION` deve corresponder à região do bucket e dos recursos do Environment. Nunca registre valores de Secrets no repositório.
-
-O desenho não fixa Account ID nem ARN e pode ser usado em diferentes Learner Labs sem alterar o código: configure credenciais temporárias, conta esperada, bucket e states de cada Environment. A portabilidade do Terraform não garante permissões IAM ou cotas na conta de destino. A configuração real dos GitHub Environments, reviewers, buckets, States e permissões AWS não é comprovada por validações locais.
-
-## Fontes
-
-- [`infra/rds-postgresql.tf`](infra/rds-postgresql.tf)
-- [`infra/sg.tf`](infra/sg.tf)
-- [`infra/backend.tf`](infra/backend.tf)
-- [Migrations e seeds demonstrativos](docs/seeds-demonstracao.md)
-- [Modelo relacional implementado](https://github.com/autoflow-fiap/autoflow/tree/develop/backend/src/main/resources/db/migration)
-- [RFC-001 — PostgreSQL e estratégia relacional](docs/RFC-001.md)
+- [Integração com API Gateway](docs/api-gateway.md)
+- [Seeds de demonstração](docs/seeds-demonstracao.md)
+- [Variables e Secrets](docs/variables-and-secrets.md)
+- [README do root Terraform](infra/README.md)

@@ -15,3 +15,8 @@ O caminho automático executa somente o Plan. Apply continua disponível somente
 - A configuração exige apenas uma Variable não sensível; não exige Secret novo nem ID de conta. O CD continua reutilizando as configurações AWS, States, criptografia e gates existentes em cada Environment.
 
 O gate automático apenas inicia os jobs de Plan após a CI aprovada. As proteções próprias do Environment continuam aplicáveis. Nenhuma implantação ou operação AWS é inferida como realizada por esta configuração local.
+
+Em consulta somente-leitura ao GitHub em 31/10/2026, `AUTO_CD_ENABLED` estava ausente e
+`TERRAFORM_APPLY_APPROVAL_CONFIGURED=false` nos dois Environments. A [RDS CI](https://github.com/autoflow-fiap/autoflow-db/actions/runs/41160302939)
+passou; a [RDS Pipeline](https://github.com/autoflow-fiap/autoflow-db/actions/runs/41160303831) falhou no gate antes do
+Plan. Rulesets com PR/checks, Required reviewers e branch policies estavam ativos. Não há evidência de Apply do RDS nesta revisão.
