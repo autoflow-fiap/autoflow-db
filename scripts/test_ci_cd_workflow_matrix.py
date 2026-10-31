@@ -33,6 +33,8 @@ class CiCdWorkflowMatrixTests(unittest.TestCase):
         self.assertIn("  push:\n    branches: [develop, main]", triggers)
         self.assertNotIn("  pull_request:", triggers)
         self.assertIn("python scripts/validate_cd_trigger.py", gate)
+        self.assertIn("AUTO_CD_ENABLED_HOMOLOG: ${{ vars.AUTO_CD_ENABLED_HOMOLOG }}", gate)
+        self.assertIn("AUTO_CD_ENABLED_PRODUCTION: ${{ vars.AUTO_CD_ENABLED_PRODUCTION }}", gate)
         self.assertNotIn("configure-aws-credentials", gate)
         self.assertNotIn("terraform plan", gate)
         for job in (plan, apply):
@@ -56,6 +58,12 @@ class CiCdWorkflowMatrixTests(unittest.TestCase):
         self.assertIn("EXPECTED_BRANCH=main", apply)
         self.assertIn('test "$APPROVAL_CONFIGURED" = "true"', apply)
         self.assertNotIn("github.event_name == 'push'", apply)
+
+    def test_cd_trigger_no_longer_uses_environment_admin_api_for_auto_cd(self):
+        trigger_script = (ROOT / "scripts" / "validate_cd_trigger.py").read_text(encoding="utf-8")
+        self.assertNotIn("/environments/", trigger_script)
+        self.assertIn('"AUTO_CD_ENABLED_HOMOLOG"', trigger_script)
+        self.assertIn('"AUTO_CD_ENABLED_PRODUCTION"', trigger_script)
 
     def test_environment_values_are_validated_without_variable_or_secret_api_queries(self):
         content = (WORKFLOWS / "pipeline.yml").read_text(encoding="utf-8")

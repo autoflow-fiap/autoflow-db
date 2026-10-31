@@ -43,7 +43,8 @@ consulte [Variables e Secrets](docs/variables-and-secrets.md).
   `feature/**`, sem credenciais AWS.
 - `pr-automatico.yaml` solicita Pull Request para `develop` após pushes em branches diferentes de `develop`.
 - `pipeline.yml` recebe `push` e `workflow_dispatch` em `develop`/`main`. O gate valida a CI do mesmo repositório, branch
-  e SHA. `AUTO_CD_ENABLED=true` no GitHub Environment selecionado habilita o Plan automático; esse caminho não executa
+  e SHA. As Repository Variables `AUTO_CD_ENABLED_HOMOLOG` e `AUTO_CD_ENABLED_PRODUCTION` controlam o Plan automático;
+  `develop` usa a primeira e `main` a segunda. Somente o valor literal `true` habilita o Plan; esse caminho não executa
   Apply. `develop` seleciona `homolog`; `main` seleciona `production`.
 - `workflow_dispatch` executa Plan por padrão. Apply exige `apply=true` e
   `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true`. O workflow verifica Required reviewers e a política do Environment para

@@ -1,6 +1,6 @@
 # Variables e Secrets por Environment
 
-O workflow usa dois GitHub Environments: `homolog`, selecionado por `develop`, e `production`, selecionado por `main`. Plan e Apply são vinculados ao Environment selecionado. Pull Requests e pushes em branches de feature executam apenas CI. Pushes em `develop`/`main` iniciam Plan automático somente com `AUTO_CD_ENABLED=true` e CI bem-sucedida para o mesmo SHA; não executam Apply.
+O workflow usa dois GitHub Environments: `homolog`, selecionado por `develop`, e `production`, selecionado por `main`. Plan e Apply são vinculados ao Environment selecionado. Pull Requests e pushes em branches de feature executam apenas CI. Pushes em `develop`/`main` iniciam Plan automático somente com a Repository Variable correspondente (`AUTO_CD_ENABLED_HOMOLOG` ou `AUTO_CD_ENABLED_PRODUCTION`) igual a `true` e CI bem-sucedida para o mesmo SHA; não executam Apply.
 
 Cadastre os mesmos nomes de Variables e Secrets nos dois Environments, com valores independentes. Restrinja `homolog` somente a `develop` e `production` somente a `main`, configure Required reviewers para os Applies e mantenha `TERRAFORM_APPLY_APPROVAL_CONFIGURED` sem o valor `true` até confirmar que os gates estão efetivamente configurados. O GitHub aplica as proteções nativas do Environment ao iniciar os jobs; o workflow também consulta Required reviewers e a política de branches antes de permitir Apply.
 
@@ -13,8 +13,14 @@ Cadastre os mesmos nomes de Variables e Secrets nos dois Environments, com valor
 | `AWS_TERRAFORM_STATE_BUCKET` | Bucket do state RDS e do state remoto de VPC/EKS | Obrigatória; o owner do bucket precisa corresponder a `AWS_EXPECTED_ACCOUNT_ID`. |
 | `AWS_TF_STATE_KEY` | Key do State deste root RDS | Obrigatória, sem default; precisa começar pelo prefixo do Environment. O sufixo é definido externamente. |
 | `AWS_INFRA_STATE_KEY` | Key do State VPC/EKS consumido pelo root RDS | Obrigatória, sem default; precisa usar o mesmo prefixo e ser idêntica a `AWS_TF_STATE_KEY_INFRA` do Environment produtor. |
-| `AUTO_CD_ENABLED` | Habilita o Plan automático após CI | Defina `true` no Environment desejado; ausente ou outro valor bloqueia o caminho automático. Não autoriza Apply. |
 | `TERRAFORM_APPLY_APPROVAL_CONFIGURED` | Gate adicional para Apply | Defina `true` após configurar Required reviewers e políticas de branch. A variável não substitui a aprovação nativa do Environment. |
+
+## Repository Variables
+
+| Nome | Uso | Requisitos |
+|---|---|---|
+| `AUTO_CD_ENABLED_HOMOLOG` | Habilita Plan automático após CI em `develop`/`homolog` | Configure como Repository Variable; somente o valor literal `true` habilita o Plan. Ausência ou outro valor mantém o CD desabilitado. Não autoriza Apply. |
+| `AUTO_CD_ENABLED_PRODUCTION` | Habilita Plan automático após CI em `main`/`production` | Configure como Repository Variable; somente o valor literal `true` habilita o Plan. Ausência ou outro valor mantém o CD desabilitado. Não autoriza Apply. |
 
 ## Contrato de State e isolamento
 
@@ -23,7 +29,7 @@ Cadastre os mesmos nomes de Variables e Secrets nos dois Environments, com valor
 | `homolog` | Prefixo obrigatório `homolog/`; sufixos fornecidos externamente | A key VPC/EKS precisa corresponder ao Environment `homolog` do produtor. |
 | `production` | Prefixo obrigatório `production/`; sufixos fornecidos externamente | A key VPC/EKS precisa corresponder ao Environment `production` do produtor. |
 
-As duas keys devem ser distintas, conter segmentos de caminho válidos e referir-se ao Environment selecionado. O workflow valida que os valores resolvidos por `vars.*` e `secrets.*` não estão vazios; não consulta a API para determinar o escopo de origem desses valores. Configure valores independentes em cada GitHub Environment e não use Repository Variables, Organization Variables ou Secrets como fallback. Nenhuma key final é definida na documentação ou no código. A igualdade de todas as seis keys e a correspondência global de conta, bucket e região são verificadas pelo teste integrado em `autoflow-infra/scripts/terraform_state_contract.py`; consulte a documentação desse repositório para executar a verificação com valores externos.
+As duas keys devem ser distintas, conter segmentos de caminho válidos e referir-se ao Environment selecionado. O workflow valida que os valores resolvidos por `vars.*` e `secrets.*` não estão vazios; não consulta a API para determinar o escopo de origem desses valores. Configure valores independentes em cada GitHub Environment e não use Repository Variables, Organization Variables ou Secrets como fallback para configuração AWS. As duas flags de CD documentadas acima são a exceção não sensível e ficam no escopo Repository. Nenhuma key final é definida na documentação ou no código. A igualdade de todas as seis keys e a correspondência global de conta, bucket e região são verificadas pelo teste integrado em `autoflow-infra/scripts/terraform_state_contract.py`; consulte a documentação desse repositório para executar a verificação com valores externos.
 
 Antes de inicializar o backend, confirme bucket, owner, key e State autoritativo. Não aponte uma key existente para um State
 vazio nem copie ou migre State sem procedimento de reconciliação e autorização próprios.
@@ -74,7 +80,7 @@ O backend S3 não fixa bucket, key ou região no código. O workflow deriva `all
 
 ## CI, Plan e Apply
 
-O CI executa testes Python, `terraform fmt -check -recursive`, `terraform init -backend=false` e `terraform validate` sem credenciais AWS. O CD recebe `push` e `workflow_dispatch` em `develop`/`main`. No caminho automático, o gate exige `AUTO_CD_ENABLED=true` e sucesso da CI do mesmo SHA; esse caminho executa Plan, não Apply. Apply é exclusivo de dispatch com `apply=true`, `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true` e aprovação do Environment. Em produção, os jobs também exigem `github.ref_protected=true`.
+O CI executa testes Python, `terraform fmt -check -recursive`, `terraform init -backend=false` e `terraform validate` sem credenciais AWS. O CD recebe `push` e `workflow_dispatch` em `develop`/`main`. No caminho automático, o gate exige a Repository Variable correspondente com valor literal `true` e sucesso da CI do mesmo SHA; esse caminho executa Plan, não Apply. Apply é exclusivo de dispatch com `apply=true`, `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true` e aprovação do Environment. Em produção, os jobs também exigem `github.ref_protected=true`.
 
 Em cada execução autorizada, o Plan valida configuração, conta, bucket e State remoto, impede a inicialização de State vazio quando detecta recursos já existentes sem State e gera um artefato de plano confidencial. O Apply fica associado ao mesmo GitHub Environment, consulta os Required reviewers e a política que permite exclusivamente `develop` em `homolog` ou `main` em `production`, revalida a conta via STS, owner/key do bucket e o fingerprint de Environment, conta, bucket, keys, região e `project_name`. O hash do arquivo também é conferido, e o Apply consome exatamente o plano produzido na execução. A política `scripts/review_rds_plan.py` bloqueia qualquer ação `delete`, inclusive substituições, sem opção de bypass.
 
