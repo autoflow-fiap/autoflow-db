@@ -1,17 +1,17 @@
 # Início automático do CD
 
-O workflow de CD recebe `push` em `develop` ou `main`, mas seu gate consulta e aguarda a execução de `.github/workflows/ci.yml` para a mesma branch e o mesmo SHA. Somente a conclusão `success` da CI exata libera o Plan. A Variable externa `AUTO_CD_ENABLED`, no Environment de destino, controla o início automático: somente o valor literal `true` habilita o gate; variável ausente ou qualquer outro valor o mantém desabilitado. Nenhuma variável, Secret, Environment ou regra de proteção é criada por este código.
+O workflow de CD recebe `push` em `develop` ou `main`. O gate seleciona `homolog` para `develop` e `production` para `main`, lê `AUTO_CD_ENABLED` no Environment selecionado e aguarda a CI do mesmo repositório, branch e SHA quando a variável tem o valor literal `true`. Ausência da variável desabilita o Plan automático; erro diferente de 404 na consulta ou falha, cancelamento, divergência ou timeout da CI bloqueia o gate. Os jobs fazem checkout do SHA validado.
 
-O gate usa o token padrão com leitura de Actions para consultar a API do GitHub por até 30 minutos. Ele confirma o nome `RDS CI`, o evento `push`, o repositório, a branch, o SHA e a conclusão. Ausência de execução, falha, cancelamento, conclusão `skipped`, divergência ou timeout bloqueia o Plan. O checkout usa o SHA validado e compara `git rev-parse HEAD` antes de acessar AWS. PRs e branches `feature/**` não são gatilhos. `main` também precisa estar protegida.
+O gate consulta a API de Actions com permissão de leitura e aguarda até 30 minutos pela CI `RDS CI`. `workflow_dispatch` permite executar Plan sem depender de `AUTO_CD_ENABLED`; o input `apply` tem default `false`. PRs e pushes em `feature/**` executam somente CI. `main` precisa estar protegida.
 
-Foi escolhido `push` com espera e validação da CI por API, em vez de `workflow_run`, porque a branch padrão deste repositório é `main`, enquanto o PR desta entrega tem destino `develop`. Assim o CD continua definido na branch alvo e não precisa de `actions:write` nem de token para re-disparo. `AUTO_CD_ENABLED` pode ser configurada separadamente nos Environments `homolog` e `production`; ausente ou diferente de `true` não libera Plan. O Plan automático continua protegido pelo Environment selecionado. O marcador existente `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true` é verificado separadamente no Apply e não é autorização implícita para Apply.
+O caminho automático executa validação e Terraform Plan, sem Apply. A seleção do Environment associa o Plan aos valores do ambiente. Apply exige dispatch com `apply=true`, `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true`, Required reviewers e política de branch correspondentes no Environment `homolog`/`develop` ou `production`/`main`.
 
-O caminho automático executa somente o Plan. Apply continua disponível somente por `workflow_dispatch` com `apply=true`, aprovação efetiva de Required Reviewers no Environment selecionado e `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true`. A aprovação de Environment para um Plan não autoriza o Apply, que exige execução separada e nova autorização. O fluxo manual Plan-only permanece disponível com `apply=false`.
+A aprovação de um Plan não autoriza Apply. O Apply usa o artifact criptografado do mesmo run e commit e revalida seu conteúdo antes de aplicar. O guard do RDS bloqueia exclusões e substituições.
 
 ## Configuração externa
 
-- Para habilitar homologação, criar fora deste PR a Variable `AUTO_CD_ENABLED=true` no Environment `homolog`; para habilitar produção, criá-la separadamente em `production`. Variável ausente ou diferente de `true` mantém o ambiente desabilitado.
+- Para habilitar homologação, configurar `AUTO_CD_ENABLED=true` no Environment `homolog`; para produção, configurar o mesmo nome separadamente em `production`. Variável ausente ou diferente de `true` mantém o ambiente desabilitado.
 - Repetir a configuração somente nos repositórios e ambientes que se queira habilitar.
 - A configuração exige apenas uma Variable não sensível; não exige Secret novo nem ID de conta. O CD continua reutilizando as configurações AWS, States, criptografia e gates existentes em cada Environment.
 
-O gate automático apenas inicia os jobs de Plan após a CI aprovada. As proteções próprias do Environment continuam aplicáveis. Nenhuma implantação ou operação AWS é inferida como realizada por esta configuração local.
+Configure as proteções nativas dos Environments e a proteção da branch `main`; o código do workflow não cria essas configurações.
