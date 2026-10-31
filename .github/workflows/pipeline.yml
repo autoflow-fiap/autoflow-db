@@ -8,6 +8,8 @@ on:
         type: boolean
         required: true
         default: false
+  push:
+    branches: [develop, main]
 
 permissions:
   contents: read
@@ -18,12 +20,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  gate:
+    name: Validar CI aprovada e commit de origem
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') &&
+       (github.ref != 'refs/heads/main' || github.ref_protected)) ||
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') &&
+       (github.ref != 'refs/heads/main' || github.ref_protected))
+    runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.validate.outputs.branch }}
+      sha: ${{ steps.validate.outputs.sha }}
+      environment: ${{ steps.validate.outputs.environment }}
+      branch_protected: ${{ steps.validate.outputs.branch_protected }}
+      auto_cd_enabled: ${{ steps.validate.outputs.auto_cd_enabled }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar origem da CI e proteger main
+        id: validate
+        env:
+          GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
+          CI_WORKFLOW_NAME: RDS CI
+          EXPECTED_REPOSITORY_ID: ${{ github.repository_id }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: python scripts/validate_cd_trigger.py
+
   validate:
     name: CI Terraform e guard do RDS
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    if: needs.gate.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.gate.outputs.auto_cd_enabled == 'true')
+    needs: gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+      - name: Confirmar checkout do commit validado
+        env:
+          DEPLOY_SHA: ${{ needs.gate.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.16.5"
@@ -39,12 +76,13 @@ jobs:
 
   plan:
     name: Terraform Plan por ambiente
-    if: (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && github.event_name == 'workflow_dispatch' && (github.ref != 'refs/heads/main' || github.ref_protected)
-    needs: validate
+    if: needs.gate.result == 'success' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && (github.ref != 'refs/heads/main' || github.ref_protected) && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.gate.outputs.auto_cd_enabled == 'true'))
+    needs: [gate, validate]
     runs-on: ubuntu-latest
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
     env:
       DEPLOYMENT_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
+      DEPLOY_SHA: ${{ needs.gate.outputs.sha }}
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}
       TF_STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
@@ -62,7 +100,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
+      - name: Confirmar checkout do commit aprovado pela CI
+        run: test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
       - name: Exigir configurações no GitHub Environment selecionado
         env:
           GH_TOKEN: ${{ github.token }}
@@ -148,7 +188,7 @@ jobs:
           python -c 'import os; assert len(os.environ["TF_PLAN_ENCRYPTION_KEY"]) >= 32, "TF_PLAN_ENCRYPTION_KEY precisa ter ao menos 32 caracteres"'
           printf '%s\n' "$TF_PLAN_ENCRYPTION_KEY" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --symmetric --cipher-algo AES256 --output rds.tfplan.gpg rds.tfplan
           printf '%s\0' "$DEPLOYMENT_ENV" "$AWS_EXPECTED_ACCOUNT_ID" "$TF_STATE_BUCKET" "$TF_STATE_KEY" "$TF_VAR_infra_state_key" "$AWS_REGION" "$TF_VAR_project_name" | sha256sum | cut -d ' ' -f 1 > rds-deployment-config.sha256
-          python -c 'import json,os; json.dump({"run_id":os.environ["GITHUB_RUN_ID"],"run_attempt":os.environ["GITHUB_RUN_ATTEMPT"],"commit":os.environ["GITHUB_SHA"]}, open("rds-plan-metadata.json", "w", encoding="utf-8"), sort_keys=True)'
+          python -c 'import json,os; json.dump({"run_id":os.environ["GITHUB_RUN_ID"],"run_attempt":os.environ["GITHUB_RUN_ATTEMPT"],"commit":os.environ["DEPLOY_SHA"]}, open("rds-plan-metadata.json", "w", encoding="utf-8"), sort_keys=True)'
           sha256sum rds.tfplan.gpg rds-plan-metadata.json rds-deployment-config.sha256 > rds.tfplan.sha256
           rm -f rds.tfplan
       - name: Armazenar plano criptografado desta execução
@@ -170,12 +210,13 @@ jobs:
 
   apply:
     name: Terraform Apply por ambiente (aprovação requerida)
-    if: (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && github.event_name == 'workflow_dispatch' && inputs.apply == true && (github.ref != 'refs/heads/main' || github.ref_protected)
-    needs: plan
+    if: needs.gate.result == 'success' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && github.event_name == 'workflow_dispatch' && inputs.apply == true && (github.ref != 'refs/heads/main' || github.ref_protected)
+    needs: [gate, plan]
     runs-on: ubuntu-latest
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
     env:
       DEPLOYMENT_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
+      DEPLOY_SHA: ${{ needs.gate.outputs.sha }}
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_EXPECTED_ACCOUNT_ID: ${{ vars.AWS_EXPECTED_ACCOUNT_ID }}
       TF_STATE_BUCKET: ${{ vars.AWS_TERRAFORM_STATE_BUCKET }}
@@ -193,7 +234,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
+      - name: Confirmar checkout do commit que gerou o Plan
+        run: test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
       - name: Exigir configurações no GitHub Environment selecionado
         env:
           GH_TOKEN: ${{ github.token }}
@@ -266,7 +309,7 @@ jobs:
         run: |
           set -euo pipefail
           sha256sum --check rds.tfplan.sha256
-          python -c 'import json,os,sys; m=json.load(open("rds-plan-metadata.json", encoding="utf-8")); sys.exit(not (m == {"run_id":os.environ["GITHUB_RUN_ID"],"run_attempt":os.environ["GITHUB_RUN_ATTEMPT"],"commit":os.environ["GITHUB_SHA"]}))'
+          python -c 'import json,os,sys; m=json.load(open("rds-plan-metadata.json", encoding="utf-8")); sys.exit(not (m == {"run_id":os.environ["GITHUB_RUN_ID"],"run_attempt":os.environ["GITHUB_RUN_ATTEMPT"],"commit":os.environ["DEPLOY_SHA"]}))'
           printf '%s\0' "$DEPLOYMENT_ENV" "$AWS_EXPECTED_ACCOUNT_ID" "$TF_STATE_BUCKET" "$TF_STATE_KEY" "$TF_VAR_infra_state_key" "$AWS_REGION" "$TF_VAR_project_name" | sha256sum | cut -d ' ' -f 1 > current-deployment-config.sha256
           cmp --silent rds-deployment-config.sha256 current-deployment-config.sha256 || {
             echo "O Environment, a conta, o bucket, o State ou o projeto mudou após o Plan; Apply bloqueado." >&2
