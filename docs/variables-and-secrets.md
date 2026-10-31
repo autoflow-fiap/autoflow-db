@@ -1,6 +1,6 @@
 # Variables e Secrets por Environment
 
-O workflow usa dois GitHub Environments: `homolog`, selecionado exclusivamente por `develop`, e `production`, selecionado exclusivamente por `main`. Plan e Apply são vinculados ao Environment selecionado antes de carregar suas configurações AWS. Pull Requests e pushes em branches de feature executam apenas CI. Pushes em `develop`/`main` podem iniciar Plan depois de `AUTO_CD_ENABLED=true` e sucesso da CI para o mesmo SHA; não executam Apply.
+O workflow usa dois GitHub Environments: `homolog`, selecionado por `develop`, e `production`, selecionado por `main`. Plan e Apply são vinculados ao Environment selecionado. Pull Requests e pushes em branches de feature executam apenas CI. Pushes em `develop`/`main` iniciam Plan automático somente com `AUTO_CD_ENABLED=true` e CI bem-sucedida para o mesmo SHA; não executam Apply.
 
 Cadastre os mesmos nomes de Variables e Secrets nos dois Environments, com valores independentes. Restrinja `homolog` somente a `develop` e `production` somente a `main`, configure Required reviewers para os Applies e mantenha `TERRAFORM_APPLY_APPROVAL_CONFIGURED` sem o valor `true` até confirmar que os gates estão efetivamente configurados. O GitHub aplica as proteções nativas do Environment ao iniciar os jobs; o workflow também consulta Required reviewers e a política de branches antes de permitir Apply.
 
@@ -13,8 +13,8 @@ Cadastre os mesmos nomes de Variables e Secrets nos dois Environments, com valor
 | `AWS_TERRAFORM_STATE_BUCKET` | Bucket do state RDS e do state remoto de VPC/EKS | Obrigatória; o owner do bucket precisa corresponder a `AWS_EXPECTED_ACCOUNT_ID`. |
 | `AWS_TF_STATE_KEY` | Key do State deste root RDS | Obrigatória, sem default; precisa começar pelo prefixo do Environment. O sufixo é definido externamente. |
 | `AWS_INFRA_STATE_KEY` | Key do State VPC/EKS consumido pelo root RDS | Obrigatória, sem default; precisa usar o mesmo prefixo e ser idêntica a `AWS_TF_STATE_KEY_INFRA` do Environment produtor. |
-| `AUTO_CD_ENABLED` | Habilita o Plan automático após CI | Ausente em `homolog` e `production` na leitura somente-leitura do GitHub em 31/10/2026; sem valor `true`, o caminho automático permanece bloqueado. Não autoriza Apply. |
-| `TERRAFORM_APPLY_APPROVAL_CONFIGURED` | Gate adicional para Apply | Estava `false` nos dois Environments em 31/10/2026, bloqueando Apply. A variável não substitui a proteção do próprio Environment. |
+| `AUTO_CD_ENABLED` | Habilita o Plan automático após CI | Defina `true` no Environment desejado; ausente ou outro valor bloqueia o caminho automático. Não autoriza Apply. |
+| `TERRAFORM_APPLY_APPROVAL_CONFIGURED` | Gate adicional para Apply | Defina `true` após configurar Required reviewers e políticas de branch. A variável não substitui a aprovação nativa do Environment. |
 
 ## Contrato de State e isolamento
 
@@ -25,7 +25,8 @@ Cadastre os mesmos nomes de Variables e Secrets nos dois Environments, com valor
 
 As duas keys devem ser distintas, conter segmentos de caminho válidos e referir-se ao Environment selecionado. O workflow valida que os valores resolvidos por `vars.*` e `secrets.*` não estão vazios; não consulta a API para determinar o escopo de origem desses valores. Configure valores independentes em cada GitHub Environment e não use Repository Variables, Organization Variables ou Secrets como fallback. Nenhuma key final é definida na documentação ou no código. A igualdade de todas as seis keys e a correspondência global de conta, bucket e região são verificadas pelo teste integrado em `autoflow-infra/scripts/terraform_state_contract.py`; consulte a documentação desse repositório para executar a verificação com valores externos.
 
-Não altere keys existentes para apontar a um State vazio sem reconciliação e autorização próprias. A presença dos objetos, bucket, owner, lineage e identidade dos recursos não foi verificada nesta alteração. Nenhum State foi inicializado, copiado ou migrado.
+Antes de inicializar o backend, confirme bucket, owner, key e State autoritativo. Não aponte uma key existente para um State
+vazio nem copie ou migre State sem procedimento de reconciliação e autorização próprios.
 
 ## Secrets do GitHub Environment
 
@@ -49,7 +50,10 @@ Não reutilize credenciais AWS ou credenciais do banco entre ambientes sem decis
 
 `project_name` já existe em `infra/vars.tf`; o workflow define seu valor por branch sem criar variável Terraform redundante. Ele compõe os nomes do RDS, DB Subnet Group, snapshot final e Security Groups. O nome `autoflow` mantém os nomes atuais de homologação; o prefixo `autoflow-production` evita colisão quando os ambientes compartilham uma conta.
 
-O workflow valida `AWS_EXPECTED_ACCOUNT_ID` como 12 dígitos antes de configurar o acesso AWS e compara a identidade retornada por STS antes de consultar recursos ou inicializar Terraform. O backend S3 e o `terraform_remote_state` usam `allowed_account_ids` derivado dessa variável externa. O bucket e o objeto remoto VPC/EKS são verificados com `head-bucket`/`head-object --expected-bucket-owner` pela AWS CLI antes do init. Assim, o código pode ser reutilizado em diferentes Learner Labs alterando somente as configurações de cada Environment. A portabilidade não comprova permissões IAM, limites ou disponibilidade de serviços na conta de destino.
+O workflow valida `AWS_EXPECTED_ACCOUNT_ID` como 12 dígitos e compara a identidade STS antes de consultar recursos ou
+inicializar Terraform. O backend S3 e o `terraform_remote_state` usam `allowed_account_ids` derivado dessa variável. Antes
+do init, o workflow valida o bucket e o State remoto VPC/EKS com `head-bucket`/`head-object --expected-bucket-owner`.
+Ao usar outra conta, configure as permissões IAM, quotas e recursos necessários nesse Environment.
 
 ## Inputs Terraform observados
 
@@ -70,10 +74,10 @@ O backend S3 não fixa bucket, key ou região no código. O workflow deriva `all
 
 ## CI, Plan e Apply
 
-O CI executa testes Python, `terraform fmt -check -recursive`, `terraform init -backend=false` e `terraform validate` sem credenciais AWS. O CD recebe `push` e `workflow_dispatch` em `develop`/`main`. No caminho automático, o gate espera a CI do mesmo SHA e exige `AUTO_CD_ENABLED=true` no Environment; o valor externo não foi verificado. O caminho automático executa Plan, não Apply. Apply é exclusivo de dispatch com `apply=true` e aprovação do Environment. Em produção, os jobs também exigem `github.ref_protected=true`; a configuração efetiva das regras de branch não foi verificada.
+O CI executa testes Python, `terraform fmt -check -recursive`, `terraform init -backend=false` e `terraform validate` sem credenciais AWS. O CD recebe `push` e `workflow_dispatch` em `develop`/`main`. No caminho automático, o gate exige `AUTO_CD_ENABLED=true` e sucesso da CI do mesmo SHA; esse caminho executa Plan, não Apply. Apply é exclusivo de dispatch com `apply=true`, `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true` e aprovação do Environment. Em produção, os jobs também exigem `github.ref_protected=true`.
 
 Em cada execução autorizada, o Plan valida configuração, conta, bucket e State remoto, impede a inicialização de State vazio quando detecta recursos já existentes sem State e gera um artefato de plano confidencial. O Apply fica associado ao mesmo GitHub Environment, consulta os Required reviewers e a política que permite exclusivamente `develop` em `homolog` ou `main` em `production`, revalida a conta via STS, owner/key do bucket e o fingerprint de Environment, conta, bucket, keys, região e `project_name`. O hash do arquivo também é conferido, e o Apply consome exatamente o plano produzido na execução. A política `scripts/review_rds_plan.py` bloqueia qualquer ação `delete`, inclusive substituições, sem opção de bypass.
 
-Para validação exclusivamente local, `terraform init -backend=false` e `terraform validate` não acessam AWS nem backend remoto. Não execute `terraform plan`, `apply` ou `destroy` como parte da validação local desta alteração.
+Para validação local, use `terraform init -backend=false` e `terraform validate`; esses comandos não acessam AWS nem backend remoto. Plan, Apply e Destroy são operações remotas e exigem os controles e autorizações aplicáveis.
 
 **Fontes:** `.github/workflows/pipeline.yml`, `infra/vars.tf`, `infra/backend.tf`, `infra/rds-postgresql.tf`, `infra/sg.tf`, `scripts/state_key_policy.py`, `scripts/verify_aws_account.py`, `scripts/state_resource_guard.py` e `scripts/review_rds_plan.py`.

@@ -1,11 +1,11 @@
 # AutoFlow — banco de dados gerenciado
 
-Este repositório provisiona o Amazon RDS PostgreSQL e as regras de rede do banco. O schema e suas migrations Flyway são
-mantidos pelo backend em [`autoflow`](https://github.com/autoflow-fiap/autoflow).
+Este repositório provisiona o Amazon RDS PostgreSQL e suas regras de rede. O schema e as migrations Flyway pertencem ao
+backend em [`autoflow`](https://github.com/autoflow-fiap/autoflow).
 
 ## Arquitetura
 
-O root `infra/` cria RDS PostgreSQL 17 privado, subnet group e Security Groups. Consome VPC e subnets do State de
+O root `infra/` declara RDS PostgreSQL 17 privado, subnet group e Security Groups. Consome VPC e subnets do State de
 `autoflow-infra`; o backend Spring Boot e a Lambda de autenticação acessam o banco pela rede privada.
 
 | Configuração declarada em Terraform | Valor |
@@ -39,18 +39,19 @@ consulte [Variables e Secrets](docs/variables-and-secrets.md).
 
 ## CI/CD e ambientes
 
-- `ci.yml` executa testes e validação Terraform em Pull Requests para `develop`/`main` e em pushes para essas branches e
+- `ci.yml` executa testes e validação Terraform em Pull Requests para `develop`/`main` e pushes para essas branches e
   `feature/**`, sem credenciais AWS.
-- `pipeline.yml` recebe `push` e `workflow_dispatch` em `develop`/`main`. O gate valida a execução bem-sucedida da CI para
-  o mesmo repositório, branch e SHA. As Variables `AUTO_CD_ENABLED_HOMOLOG` e `AUTO_CD_ENABLED_PRODUCTION` habilitam o
-  Plan automático, respectivamente, em `develop`/`homolog` e `main`/`production`; o fluxo automático não executa Apply.
-- `workflow_dispatch` executa Plan por padrão. Apply exige `apply=true`, `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true` e a
-  aprovação do GitHub Environment. O workflow verifica Required reviewers e a política do Environment para limitar
-  `homolog` a `develop` e `production` a `main`; `main` também exige branch protegida.
-- O Plan é criptografado e vinculado à execução e ao commit. Apply valida sua integridade e reaplica o Plan produzido
+- `pr-automatico.yaml` solicita Pull Request para `develop` após pushes em branches diferentes de `develop`.
+- `pipeline.yml` recebe `push` e `workflow_dispatch` em `develop`/`main`. O gate valida a CI do mesmo repositório, branch
+  e SHA. `AUTO_CD_ENABLED=true` no GitHub Environment selecionado habilita o Plan automático; esse caminho não executa
+  Apply. `develop` seleciona `homolog`; `main` seleciona `production`.
+- `workflow_dispatch` executa Plan por padrão. Apply exige `apply=true` e
+  `TERRAFORM_APPLY_APPROVAL_CONFIGURED=true`. O workflow verifica Required reviewers e a política do Environment para
+  limitar `homolog` a `develop` e `production` a `main`; `main` também exige branch protegida.
+- O Plan é criptografado e vinculado à execução e ao commit. Apply valida sua integridade e aplica o Plan produzido
   naquele fluxo; o guard do RDS bloqueia exclusões e substituições.
 
-Configure proteções de branch para exigir Pull Request e checks de CI. Os workflows dos quatro repositórios são
+Configure as proteções de branch para exigir Pull Request e checks de CI. Os workflows dos repositórios são
 independentes; a ordem de provisionamento e os gates estão descritos no [guia de CI/CD](docs/ci-cd-automatico.md) e no
 [runbook de implantação](https://github.com/autoflow-fiap/autoflow-infra/blob/develop/docs/api-gateway/runbook.md).
 
