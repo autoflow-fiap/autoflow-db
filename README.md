@@ -18,8 +18,8 @@ O root `infra/` declara RDS PostgreSQL 17 privado, subnet group e Security Group
 | Proteção contra remoção | Ativada |
 | Enhanced Monitoring | Desativado |
 
-O modelo relacional está no [diagrama ER](docs/diagrama-er.md); a justificativa para PostgreSQL e a separação entre
-infraestrutura e schema estão em [RFC-001](docs/RFC-001.md). O contrato de API e autenticação está no
+O modelo relacional está no [diagrama ER](docs/diagrama-er.md); a decisão de persistência está em
+[ADR-001](docs/adr/ADR-001-postgresql.md) e sua análise técnica em [RFC-001](docs/RFC-001.md). O contrato de API e autenticação está no
 [guia OpenAPI](https://github.com/autoflow-fiap/autoflow/blob/develop/docs/openapi/README.md) e na
 [coleção Postman](https://github.com/autoflow-fiap/autoflow/blob/develop/backend/postman/autoflow-serverless-auth.postman_collection.json).
 
