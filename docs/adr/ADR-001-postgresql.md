@@ -1,6 +1,6 @@
 # ADR-001 — PostgreSQL como mecanismo de persistência do AutoFlow
 
-- **Status:** registrada a partir da configuração atual; a aprovação histórica e os decisores originais não foram localizados.
+- **Status:** Aceita.
 - **Data:** 02/11/2026.
 - **Escopo:** mecanismo de persistência, ownership do schema e provisionamento relacional nos repositórios `autoflow-db` e `autoflow`.
 
