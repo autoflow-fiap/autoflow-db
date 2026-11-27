@@ -1,12 +1,15 @@
 # AutoFlow — banco de dados gerenciado
 
-Este repositório provisiona o Amazon RDS PostgreSQL e suas regras de rede. O schema e as migrations Flyway pertencem ao
-backend em [`autoflow`](https://github.com/autoflow-fiap/autoflow).
+Este repositório provisiona o Amazon RDS PostgreSQL, uma tabela DynamoDB de usuários e as regras de rede do RDS. O
+schema relacional e as migrations Flyway pertencem ao backend em
+[`autoflow`](https://github.com/autoflow-fiap/autoflow).
 
 ## Arquitetura
 
-O root `infra/` declara RDS PostgreSQL 17 privado, subnet group e Security Groups. Consome VPC e subnets do State de
-`autoflow-infra`; o backend Spring Boot e a Lambda de autenticação acessam o banco pela rede privada.
+O root `infra/` declara RDS PostgreSQL 17 privado, subnet group, Security Groups e a tabela DynamoDB `autoflow-users`,
+cuja chave de partição é `cpf_cnpj`. Consome VPC e subnets do State de `autoflow-infra`; o backend Spring Boot e a
+Lambda de autenticação acessam o RDS pela rede privada. Permissões IAM para acessar a tabela não são criadas por este
+repositório.
 
 | Configuração declarada em Terraform | Valor |
 |---|---|
@@ -17,6 +20,9 @@ O root `infra/` declara RDS PostgreSQL 17 privado, subnet group e Security Group
 | Snapshot final | Obrigatório |
 | Proteção contra remoção | Ativada |
 | Enhanced Monitoring | Desativado |
+
+A tabela DynamoDB usa cobrança sob demanda, criptografia em repouso, recuperação point-in-time e proteção contra
+remoção. Senhas devem ser armazenadas apenas como hashes fortes produzidos pela aplicação, nunca em texto puro.
 
 O modelo relacional está no [diagrama ER](docs/diagrama-er.md); a justificativa para PostgreSQL e a separação entre
 infraestrutura e schema estão em [RFC-001](docs/RFC-001.md). O contrato de API e autenticação está no

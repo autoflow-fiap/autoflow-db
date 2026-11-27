@@ -1,8 +1,10 @@
-# Terraform do RDS
+# Terraform do RDS e DynamoDB
 
-## Configuração de rede e RDS
+## RDS e DynamoDB
 
-O Terraform final configura um DB Subnet Group formado pelas sub-redes privadas lidas do state da infraestrutura e RDS privado com armazenamento criptografado, classe `db.t3.micro` e 20 GB `gp3`. A retenção de backup configurada é de um dia e Enhanced Monitoring está desativado. Após reset do Learner Lab, reexecute as pipelines CI/CD para provisionar novamente os recursos.
+O Terraform configura um DB Subnet Group formado pelas sub-redes privadas lidas do state da infraestrutura e RDS privado com armazenamento criptografado, classe `db.t3.micro` e 20 GB `gp3`. A retenção de backup configurada é de um dia e Enhanced Monitoring está desativado.
+
+Também declara a tabela DynamoDB `autoflow-users`, com `cpf_cnpj` (String) como chave de partição, cobrança sob demanda, criptografia em repouso, recuperação point-in-time e proteção contra remoção. Os itens podem ter atributos adicionais, mas senhas devem ser armazenadas somente como hashes fortes gerados pela aplicação; nunca grave senhas em texto puro. O root exporta o nome e o ARN da tabela. Ele não cria roles nem políticas IAM: conceda aos consumidores somente as ações e a tabela necessárias, fora deste root.
 
 O ingresso TCP 5432 é limitado ao `clusterSecurityGroupId` obtido por `data.aws_eks_cluster` e ao Security Group criado para a Lambda. O nome do cluster vem do output `eks_cluster_name` do state EKS; o output `eks_security_group_id` é um Security Group diferente e não é usado como origem do tráfego dos nodes. A consulta EKS precisa de permissão de leitura `eks:DescribeCluster`; não há recursos ou roles IAM novos declarados por este root. VPC, sub-redes e state são consultados, não criados ou alterados aqui.
 
